@@ -15,6 +15,16 @@ using std::function;
 using std::vector;
 using std::tuple;
 
+/** @brief Normalizes an angle to the range [-pi, pi].
+ *
+ *  This function takes an angle in radians and wraps it to the range [-pi, pi].
+ *  It is useful for ensuring that angle measurements and state variables representing angles remain within a consistent range,
+ *  which can help prevent issues with angle discontinuities in the EKF update step.
+ *
+ *  @tparam Real The floating point type of the angle (e.g. float, double).
+ *  @param angle The angle to normalize, in radians.
+ *  @return The normalized angle in the range [-pi, pi].
+ */
 template <typename Real>
 Real normalizeAngle(Real angle) {
     constexpr Real PI = Real(3.14159265358979323846);
@@ -226,6 +236,7 @@ bool operator<(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) {
     return a.time < b.time;
 }
 
+/// @brief Concatenates two matrices vertically (stacks them on top of each other).
 template <typename Real, int K>
 Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
                                    const Matrix<Real, Dynamic, K>& B)
@@ -236,6 +247,7 @@ Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
     return result;
 }
 
+/// @brief Concatenates two matrices diagonally (places them in the top-left and bottom-right corners, filling the rest with zeros).
 template <typename Real>
 Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& A,
                                           const Matrix<Real, Dynamic, Dynamic>& B)
@@ -320,7 +332,7 @@ public:
     /** @brief Inserts a TimeStep into the TimeLine.
      *
      *  If there are existing TimeSteps that are close in time to the new TimeStep,
-     *  they will be joined together using the joinTimeSteps function,
+     *  they will be joined together using the @ref joinTimeSteps function,
      *  and the resulting TimeStep will replace the existing ones.
      *  Measurements taken at the same time or very close in time are treated as a single measurement for the EKF update step.
      *
