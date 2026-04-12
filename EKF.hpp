@@ -297,14 +297,36 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
     return step;
 }
 
+/*! A timeline of TimeSteps for the EKF.
+ *  @tparam Real The floating point type to use (e.g. float, double)
+ *  @tparam n The dimension of the state vector (can be set to Dynamic)
+ * */
 template <typename Real, int n>
 class TimeLine {
 public:
     using iterator = typename std::multiset<TimeStep<Real, n>>::iterator;
-
+    /// @brief The maximum time difference between two TimeSteps for them to be considered "close" and thus joined together.
     Real epsilonTime;
+
+    /**  @brief Constructs an empty TimeLine with a given epsilonTime.
+     *
+     *  epsilonTime is the maximum time difference between two TimeSteps
+     *  for them to be considered "close" and thus joined together.
+     *  The default value of 1e-9 is suitable for most applications,
+     *  but it can be adjusted based on the expected time resolution.
+     */
     TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
 
+    /** @brief Inserts a TimeStep into the TimeLine.
+     *
+     *  If there are existing TimeSteps that are close in time to the new TimeStep,
+     *  they will be joined together using the joinTimeSteps function,
+     *  and the resulting TimeStep will replace the existing ones.
+     *  Measurements taken at the same time or very close in time are treated as a single measurement for the EKF update step.
+     *
+     *  @param timestep The TimeStep to insert into the TimeLine.
+     *  @return An iterator pointing to the inserted (or joined) TimeStep.
+     */
     iterator insert(const TimeStep<Real, n>& timestep) {
         // find timesteps just after the new timestep
         auto after = steps.lower_bound(timestep);
@@ -332,7 +354,9 @@ public:
         return steps.end();
     }
 private:
+    // stores the TimeSteps sorted by time.
     std::multiset<TimeStep<Real, n>> steps;
+    // a helper function to check if two TimeSteps are close in time.
     bool areClose(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) const {
         return std::abs(a.time - b.time) < epsilonTime;
     }
