@@ -4,8 +4,9 @@
 
 #include <Eigen/Dense>
 #include <functional>
-#include <vector>
+#include <set>
 #include <tuple>
+#include <vector>
 
 
 namespace EKFNamespace {
@@ -17,10 +18,12 @@ using std::tuple;
 template <typename Real>
 Real normalizeAngle(Real angle) {
     constexpr Real PI = Real(3.14159265358979323846);
-    return angle - 2.0 * PI * std::floor((angle + PI) / (2.0 * PI));
+    constexpr Real TWO_PI = Real(2) * PI;
+    return angle - TWO_PI * std::floor((angle + PI) / TWO_PI);
 }
 
-/*! A discrete point in time of a Kalman filter
+/*! A discrete point in time of a Kalman filter.
+ *  Most of the filter math is hidden within this class in the predict() method.
  *  @tparam Real The floating point type to use (e.g. float, double)
  *  @tparam n The dimension of the state vector (can be set to Dynamic)
  * */
@@ -34,8 +37,7 @@ public:
     using StateTransition = Matrix<Real, n, n>;
     using Measurement = Matrix<Real, Dynamic, 1>;
     using MeasurementJacobian = Matrix<Real, Dynamic, n>;
-    using MeasurementModel =
-        function<tuple<Measurement, MeasurementJacobian>(const State&)>;
+    using MeasurementModel = function<tuple<Measurement, MeasurementJacobian>(const State&)>;
     /// @brief The time associated with the observation.
     Real time;
     /// @brief The state vector at the time of the observation (x).
@@ -44,13 +46,13 @@ public:
     StateCovariance state_covariance;
     /// @brief The measurement vector associated with the observation (z).
     Measurement measurement;
-    /**  @brief The function that maps the state to the tuple (measurement, measurement Jacobian).
+    /**  @brief The function that maps the state to the tuple (measurement, Jacobian).
      *
      *  This function takes a state vector as input and returns a tuple containing:
      *  - The expected measurement vector corresponding to the input state.
      *  - The measurement Jacobian matrix, which is the derivative of the measurement function with respect to the state.
      *
-     *  For example, if the measurement is a non-linear function of the state, this function would compute both the expected measurement and its Jacobian for a given state.
+     *  This is useful for non-linear measurements.
      */
     MeasurementModel measurement_model;
     ///  @brief The covariance matrix of the measurement noise (R).
@@ -143,11 +145,11 @@ public:
                  const State& predicted_state)
     {
         StateCovariance I = StateCovariance::Identity();
-        auto& F = transition_jacobian;
-        auto& Q = process_noise_covariance;
-        auto P_prev = previous.state_covariance;
-        auto& R = measurement_covariance;
-        auto& x_pred = predicted_state;
+        const auto& F = transition_jacobian;
+        const auto& Q = process_noise_covariance;
+        const auto& P_prev = previous.state_covariance;
+        const auto& R = measurement_covariance;
+        const auto& x_pred = predicted_state;
 
         auto P_pred = F * sym(P_prev) * F.transpose() + Q;
         if(hasMeasurement()) {
@@ -162,7 +164,7 @@ public:
             Mat K = S.ldlt().solve(H * P_pred.transpose()).transpose();
 
             state = x_pred + K * y;
-            // state_covariance = (I - K * H) * P_pred; but in Joseph form it is:
+            // state_covariance = (I - K * H) * P_pred; but in Joseph form:
             state_covariance = (I - K * H) * sym(P_pred) * (I - K * H).transpose()
                              + K * R * K.transpose();
             state_covariance = sym(state_covariance);
@@ -170,18 +172,24 @@ public:
             state = x_pred;
             state_covariance = P_pred;
         }
+        for(int i : angle_indices) {
+            state[i] = normalizeAngle(state[i]);
+        }
     }
 
-    /**  @brief Checks if the observation has a measurement associated with it */
-    ///
-    ///  If the observation has no measurement,
-    ///  it represents a discrete point in time used for a prediction step only.
-    ///  In order to accurately predict the state in non-linear systems,
-    ///  these timesteps are necessary to perform intermediate prediction steps.
-    ///  @return true if the measurement vector is non-empty, false otherwise
-    ///
+    /**  @brief Checks if the observation has a measurement associated with it
+     *
+     *  If the observation has no measurement,
+     *  it represents a discrete point in time used for a prediction step only.
+     *  In order to accurately predict the state in non-linear systems,
+     *  these timesteps are necessary to perform intermediate prediction steps.
+     *  @return true if the measurement vector is non-empty, false otherwise
+    */
     bool hasMeasurement() const {
         return measurement.size() > 0;
+    }
+    bool hasEstimatedState() const {
+        return !state.hasNaN() && !state_covariance.hasNaN();
     }
 private:
     static StateCovariance undefined_state_covariance() {
@@ -204,9 +212,129 @@ private:
             return std::make_tuple(no_measurement(), no_measurement_jacobian());
         };
     }
+    // a usefull optimisation to treat symmetric matrices in computations
+    // also improves numerical stability.
     template <typename Derived>
     static inline auto sym(const Eigen::MatrixBase<Derived>& m) {
         return m.template selfadjointView<Eigen::Lower>();
+    }
+};
+
+/** @brief Comparison operator for TimeStep based on time. */
+template<typename Real, int n>
+bool operator<(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) {
+    return a.time < b.time;
+}
+
+template <typename Real, int K>
+Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
+                                   const Matrix<Real, Dynamic, K>& B)
+{
+    Matrix<Real, Dynamic, K> result(A.rows() + B.rows(), A.cols());
+    result << A,
+              B;
+    return result;
+}
+
+template <typename Real>
+Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& A,
+                                          const Matrix<Real, Dynamic, Dynamic>& B)
+{
+    Matrix<Real, Dynamic, Dynamic> result(A.rows() + B.rows(), A.cols() + B.cols());
+    result << A, Matrix<Real, Dynamic, Dynamic>::Zero(A.rows(), B.cols()),
+              Matrix<Real, Dynamic, Dynamic>::Zero(B.rows(), A.cols()), B;
+    return result;
+}
+
+/** @brief Joins two TimeSteps that are close in time into a single TimeStep.
+ *
+ *  This is useful when multiple measurements are taken at the same time or very close in time,
+ *  and we want to treat them as a single measurement for the EKF update step.
+ *  The resulting TimeStep will have the average time of the two input TimeSteps,
+ *  a concatenated measurement vector, a combined measurement model that concatenates the outputs of the two input measurement models,
+ *  and a block diagonal measurement covariance matrix.
+ *
+ *  @param a The first TimeStep to join.
+ *  @param b The second TimeStep to join.
+ *  @return A new TimeStep that combines the measurements of a and b.
+ */
+template <typename Real, int n>
+TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
+                                const TimeStep<Real, n>& b)
+{
+    if(!a.hasMeasurement()) {
+        // a is virtually empty, so we can just take b
+        return b;
+    }
+    if(!b.hasMeasurement()) {
+        // b is virtually empty, so we can just take a
+        return a;
+    }
+    vector<int> angle_indices = a.angle_indices;
+    for(int i : b.angle_indices) {
+        angle_indices.push_back(i + a.measurement.size());
+    }
+    TimeStep<Real, n> step(
+        a.time, // we can take either a.time or b.time since they are close
+        concatVer(a.measurement, b.measurement),
+        [a_model = a.measurement_model,
+         b_model = b.measurement_model](const typename TimeStep<Real, n>::State& state) {
+            auto [z_a, H_a] = a_model(state);
+            auto [z_b, H_b] = b_model(state);
+            Matrix<Real, Dynamic, 1> z = concatVer(z_a, z_b);
+            Matrix<Real, Dynamic, Dynamic> H = concatVer(H_a, H_b);
+            return std::make_tuple(z, H);
+        },
+        concatDiag(a.measurement_covariance, b.measurement_covariance),
+        angle_indices);
+    if(a.hasEstimatedState()) {
+        step.state = a.state;
+        step.state_covariance = a.state_covariance;
+    } else {
+        step.state = b.state;
+        step.state_covariance = b.state_covariance;
+    }
+    return step;
+}
+
+template <typename Real, int n>
+class TimeLine {
+public:
+    using iterator = typename std::set<TimeStep<Real, n>>::iterator;
+
+    Real epsilonTime;
+    TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
+
+    iterator insert(const TimeStep<Real, n>& timestep) {
+        // find timesteps just after the new timestep
+        auto after = steps.lower_bound(timestep);
+        if(after != steps.end()) {
+            if(areClose(*after, timestep)) {
+                auto res = steps.emplace_hint(after, joinTimeSteps(*after, timestep));
+                steps.erase(after);
+                return res;
+            }
+        }
+        if(after != steps.begin()) {
+            auto before = std::prev(after);
+            if(areClose(*before, timestep)) {
+                auto res = steps.emplace_hint(before, joinTimeSteps(*before, timestep));
+                steps.erase(before);
+                return res;
+            }
+        }
+        return steps.emplace_hint(after, timestep);
+    }
+    iterator begin() {
+        return steps.begin();
+    }
+    iterator end() {
+        return steps.end();
+    }
+private:
+    std::multiset<TimeStep<Real, n>> steps;
+    bool areClose(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) const {
+        return std::abs(a.time - b.time) < epsilonTime;
     }
 };
 
