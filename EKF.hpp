@@ -300,7 +300,7 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
 template <typename Real, int n>
 class TimeLine {
 public:
-    using iterator = typename std::set<TimeStep<Real, n>>::iterator;
+    using iterator = typename std::multiset<TimeStep<Real, n>>::iterator;
 
     Real epsilonTime;
     TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
