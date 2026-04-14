@@ -433,8 +433,8 @@ public:
             // do not add old timesteps
             return timeline.begin();
         }
-        auto it = timeline.insert(timestep);
-        while(it != timeline.end()) {
+        auto res = timeline.insert(timestep);
+        for(auto it = res; it != timeline.end(); it++) {
             if(it == timeline.begin()) {
                 continue;
             }
@@ -448,7 +448,7 @@ public:
                 (max_history_time>0 && timeline.totalTime() > max_history_time) ) {
             timeline.drop();
         }
-        return true;
+        return res;
     }
 };
 
