@@ -67,15 +67,15 @@ public:
     MeasurementModel measurement_model;
     ///  @brief The covariance matrix of the measurement noise (R).
     Mat measurement_covariance;
-    /**  @brief Indices of the angles in the state vector.
+    /**  @brief Indices of the angles in the measurement vector.
      *
-     *  Any state variable that represents an angle (e.g. orientation)
+     *  Any measurement variable that represents an angle (e.g. orientation)
      *  should have its index included in this vector.
      *  When an angle is updated, it will be wrapped to the range [-pi, pi].
      *  For example, if the state vector is [x, y, theta] and theta is an angle,
      *  then anglesIndices should be set to {2} (assuming 0-based indexing).
      */
-    vector<int> angle_indices;
+    vector<int> measurement_angle_indices;
 
     /**
      * @brief Constructs an empty observation.
@@ -118,7 +118,7 @@ public:
           measurement{measurement},
           measurement_model{measurement_model},
           measurement_covariance{measurement_covariance},
-          angle_indices{angle_indices} {}
+          measurement_angle_indices{angle_indices} {}
     /**
      * @brief Constructs an observation with a given time, measurement,
      * measurement Jacobian and measurement noise covariance.
@@ -132,7 +132,7 @@ public:
              const Matrix<Real, m, 1>& measurement,
              const Matrix<Real, m, n>& measurement_jacobian,
              const Matrix<Real, m, m>& measurement_covariance,
-             const vector<int>& angle_indices = {})
+             const vector<int>& measurement_angle_indices = {})
         : time{time},
           measurement{measurement},
           measurement_model{[measurement_jacobian](const State& state) {
@@ -140,7 +140,7 @@ public:
                                      measurement_jacobian);
           }},
           measurement_covariance{measurement_covariance},
-          angle_indices{angle_indices} {}
+          measurement_angle_indices{measurement_angle_indices} {}
 
     /**
      * @brief The EKF prediction and update steps based on the previous TimeStep.
@@ -165,7 +165,7 @@ public:
         if(hasMeasurement()) {
             auto [z_pred, H] = measurement_model(x_pred);
             Vec y = measurement - z_pred;
-            for(int i : angle_indices) {
+            for(int i : measurement_angle_indices) {
                 y[i] = normalizeAngle(y[i]);
             }
 
@@ -182,9 +182,6 @@ public:
             state = x_pred;
             state_covariance = P_pred;
         }
-        for(int i : angle_indices) {
-            state[i] = normalizeAngle(state[i]);
-        }
     }
 
     /**  @brief Checks if the TimeStep has a measurement associated with it
@@ -196,7 +193,7 @@ public:
      *  @return true if the measurement vector is non-empty, false otherwise
      */
     bool hasMeasurement() const {
-        return measurement.size() > 0;
+        return measurement.size() > 0 && measurement_covariance.size() > 0;
     }
     /** @brief Checks if the TimeStep has an estimated state.
      *
@@ -289,9 +286,9 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
         // b is virtually empty, so we can just take a
         return a;
     }
-    vector<int> angle_indices = a.angle_indices;
-    for(int i : b.angle_indices) {
-        angle_indices.push_back(i + a.measurement.size());
+    vector<int> measurement_angle_indices = a.measurement_angle_indices;
+    for(int i : b.measurement_angle_indices) {
+        measurement_angle_indices.push_back(i + a.measurement.size());
     }
     TimeStep<Real, n> step(
         a.time, // we can take either a.time or b.time since they are close
@@ -305,7 +302,7 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
             return std::make_tuple(z, H);
         },
         concatDiag(a.measurement_covariance, b.measurement_covariance),
-        angle_indices);
+        measurement_angle_indices);
     if(a.hasEstimatedState()) {
         step.state = a.state;
         step.state_covariance = a.state_covariance;
@@ -455,6 +452,7 @@ public:
         }
         return res;
     }
+
 };
 
 
