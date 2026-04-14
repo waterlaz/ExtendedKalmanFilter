@@ -31,6 +31,15 @@ Real normalizeAngle(Real angle) {
     return angle - TWO_PI * std::floor((angle + PI) / TWO_PI);
 }
 
+template <typename Real, int n>
+bool isMatrixPositiveDefinite(const Matrix<Real, n, n>& A){
+    if(A.rows() != A.cols() || !A.isApprox(A.transpose())){
+        return false;
+    }
+    LLT<Matrix<Real, n, n>> llt(A);
+    return llt.info() == Success;
+}
+
 /*! A discrete point in time of a Kalman filter.
  *  Most of the filter math is hidden within this class in the predict() method.
  *  @tparam Real The floating point type to use (e.g. float, double)
@@ -118,7 +127,11 @@ public:
           measurement{measurement},
           measurement_model{measurement_model},
           measurement_covariance{measurement_covariance},
-          measurement_angle_indices{angle_indices} {}
+          measurement_angle_indices{angle_indices}
+    {
+        assert(isMatrixPositiveDefinite(measurement_covariance));
+        assert(measurement.size() == measurement_covariance.rows());
+    }
     /**
      * @brief Constructs an observation with a given time, measurement,
      * measurement Jacobian and measurement noise covariance.
@@ -140,7 +153,12 @@ public:
                                      measurement_jacobian);
           }},
           measurement_covariance{measurement_covariance},
-          measurement_angle_indices{measurement_angle_indices} {}
+          measurement_angle_indices{measurement_angle_indices}
+    {
+        assert(isMatrixPositiveDefinite(measurement_covariance));
+        assert(measurement.size() == measurement_covariance.rows());
+        assert(measurement_jacobian.rows() == measurement.size());
+    }
 
     /**
      * @brief The EKF prediction and update steps based on the previous TimeStep.
@@ -161,9 +179,16 @@ public:
         const auto& R = measurement_covariance;
         const auto& x_pred = predicted_state;
 
+        assert(previous.hasEstimatedState());
+        assert(isMatrixPositiveDefinite(Q));
+        assert(isMatrixPositiveDefinite(R));
+        assert(isMatrixPositiveDefinite(P_prev));
+
         auto P_pred = F * sym(P_prev) * F.transpose() + Q;
         if(hasMeasurement()) {
             auto [z_pred, H] = measurement_model(x_pred);
+            assert(z_pred.size() == measurement.size());
+            assert(H.rows() == measurement.size());
             Vec y = measurement - z_pred;
             for(int i : measurement_angle_indices) {
                 y[i] = normalizeAngle(y[i]);
@@ -171,7 +196,7 @@ public:
 
             Mat S = H * sym(P_pred) * H.transpose() + R;
             //Mat K = P_pred * H.transpose() * S.inverse(); but stable:
-            Mat K = S.ldlt().solve(H * P_pred.transpose()).transpose();
+            Mat K = S.ldlt().solve(H * P_pred).transpose();
 
             state = x_pred + K * y;
             // state_covariance = (I - K * H) * P_pred; but in Joseph form:
@@ -244,6 +269,7 @@ template <typename Real, int K>
 Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
                                    const Matrix<Real, Dynamic, K>& B)
 {
+    assert(A.cols() == B.cols());
     Matrix<Real, Dynamic, K> result(A.rows() + B.rows(), A.cols());
     result << A,
               B;
@@ -255,6 +281,7 @@ template <typename Real>
 Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& A,
                                           const Matrix<Real, Dynamic, Dynamic>& B)
 {
+    assert(A.cols() == A.rows() && B.cols() == B.rows());
     Matrix<Real, Dynamic, Dynamic> result(A.rows() + B.rows(), A.cols() + B.cols());
     result << A, Matrix<Real, Dynamic, Dynamic>::Zero(A.rows(), B.cols()),
               Matrix<Real, Dynamic, Dynamic>::Zero(B.rows(), A.cols()), B;
