@@ -149,10 +149,10 @@ public:
      * @param transition_jacobian The Jacobian matrix of the state transition function.
      * @param predicted_state The predicted state vector based on the state transition function.
      */
-    void predict(const TimeStep<Real, n>& previous,
-                 const StateCovariance& process_noise_covariance,
-                 const StateTransition& transition_jacobian,
-                 const State& predicted_state)
+    void update(const TimeStep<Real, n>& previous,
+                const StateCovariance& process_noise_covariance,
+                const StateTransition& transition_jacobian,
+                const State& predicted_state)
     {
         StateCovariance I = StateCovariance::Identity();
         const auto& F = transition_jacobian;
@@ -365,13 +365,107 @@ public:
     iterator end() {
         return steps.end();
     }
+    void clear() {
+        steps.clear();
+    }
+    /// @brief Checks if the TimeLine is empty (i.e. contains no TimeSteps).
+    bool empty() const {
+        return steps.empty();
+    }
+    /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
+    Real totalTime() const {
+        if(steps.empty()) {
+            return Real(0);
+        }
+        return steps.rbegin()->time - steps.begin()->time;
+    }
+    /// @brief Removes the earliest TimeStep from the TimeLine.
+    void drop() {
+        if(!steps.empty()) {
+            steps.erase(steps.begin());
+        }
+    }
 private:
-    // stores the TimeSteps sorted by time.
+    /// @brief stores the TimeSteps sorted by time.
     std::multiset<TimeStep<Real, n>> steps;
-    // a helper function to check if two TimeSteps are close in time.
+    /// @brief a helper function to check if two TimeSteps are close in time.
     bool areClose(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) const {
         return std::abs(a.time - b.time) < epsilonTime;
     }
 };
+
+template <typename Real, int n>
+class EKF {
+public:
+    using StateCovariance = Matrix<Real, n, n>;
+    using StateJacobian = Matrix<Real, n, n>;
+    using State = Matrix<Real, n, 1>;
+    /// @brief maximum number of TimeSteps to keep in the TimeLine (or 0 to ingore).
+    size_t max_history_count = 1000;
+    /// @brief maximum period of time to keep in the TimeLine (or negative to ignore).
+    Real max_history_time = -1;
+    /// @brief stores TimeSteps sorted by time.
+    TimeLine<Real, n> timeline;
+    /**  @brief The function that maps the previous state and time duration to
+     * the tuple (predicted state, Jacobian, state transition noise covariance).
+     *
+     *  This function should take a state vector and passed time as input
+     *  and return a triplet containing:
+     *  - The predicted new state vector after the time dt.
+     *  - The state Jacobian matrix, how the next state depends on the previous state.
+     *  - The covariance matrix of the process noise for the state transition.
+     *  In many cases, the covariance matrix can be Q*dt for some constant Q.
+     */
+    virtual std::tuple<State, StateJacobian, StateCovariance> predict(
+        const State& x, Real dt) = 0;
+    /** @brief Adds a new TimeStep and performs the EKF prediction and update steps.
+     *
+     *  If there already is a TimeStep with a close enough time,
+     *  the new timestep will be joined with it using the @ref joinTimeSteps function
+     *  and the resulting TimeStep will replace the existing one.
+     *  The EKF prediction and update steps will be performed for the new
+     *  TimeStep and all subsequent TimeSteps in the TimeLine.
+     *  @param timestep The TimeStep to add to the TimeLine and perform EKF steps for.
+     *  @return reference to the added (or joined) TimeStep in the TimeLine.
+     */
+    TimeStep<Real, n>& addTimeStep(const TimeStep<Real, n>& timestep) {
+        if(!timeline.empty() && timeline.begin()->time > timestep.time) {
+            // do not add old timesteps
+            return timeline.begin();
+        }
+        auto it = timeline.insert(timestep);
+        while(it != timeline.end()) {
+            if(it == timeline.begin()) {
+                continue;
+            }
+            auto prev = std::prev(it);
+            Real dt = it->time - prev->time;
+            auto [x_pred, F, Q] = predict(prev->state, dt);
+            it->update(*prev, Q, F, x_pred);
+        }
+        // remove old timesteps if we exceed the limits
+        while( (max_history_count>0 && timeline.size() > max_history_count) ||
+                (max_history_time>0 && timeline.totalTime() > max_history_time) ) {
+            timeline.drop();
+        }
+        return true;
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 } // namespace EKFNamespace
