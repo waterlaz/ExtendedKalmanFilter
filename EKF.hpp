@@ -8,7 +8,6 @@
 #include <tuple>
 #include <vector>
 
-
 namespace EKFNamespace {
 using namespace Eigen;
 using std::function;
@@ -60,7 +59,8 @@ public:
      *
      *  This function takes a state vector as input and returns a tuple containing:
      *  - The expected measurement vector corresponding to the input state.
-     *  - The measurement Jacobian matrix, which is the derivative of the measurement function with respect to the state.
+     *  - The measurement Jacobian matrix,
+     *  which is the derivative of the measurement function with respect to the state.
      *
      *  This is useful for non-linear measurements.
      */
@@ -187,17 +187,23 @@ public:
         }
     }
 
-    /**  @brief Checks if the observation has a measurement associated with it
+    /**  @brief Checks if the TimeStep has a measurement associated with it
      *
-     *  If the observation has no measurement,
+     *  If the TimeStep has no measurement,
      *  it represents a discrete point in time used for a prediction step only.
      *  In order to accurately predict the state in non-linear systems,
      *  these timesteps are necessary to perform intermediate prediction steps.
      *  @return true if the measurement vector is non-empty, false otherwise
-    */
+     */
     bool hasMeasurement() const {
         return measurement.size() > 0;
     }
+    /** @brief Checks if the TimeStep has an estimated state.
+     *
+     *  A TimeStep has an estimated state if its state vector and covariance matrix
+     *  do not contain NaN values. A TimeStep without an estimated state
+     *  cannot be used as a previous TimeStep for the update() method.
+     */
     bool hasEstimatedState() const {
         return !state.hasNaN() && !state_covariance.hasNaN();
     }
@@ -262,8 +268,9 @@ Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& 
  *
  *  This is useful when multiple measurements are taken at the same time or very close in time,
  *  and we want to treat them as a single measurement for the EKF update step.
- *  The resulting TimeStep will have the average time of the two input TimeSteps,
- *  a concatenated measurement vector, a combined measurement model that concatenates the outputs of the two input measurement models,
+ *  The resulting TimeStep will have the time of the first TimeStep.
+ *  a concatenated measurement vector, a combined measurement model that
+ *  concatenates the outputs of the two input measurement models,
  *  and a block diagonal measurement covariance matrix.
  *
  *  @param a The first TimeStep to join.
@@ -319,7 +326,6 @@ public:
     using iterator = typename std::multiset<TimeStep<Real, n>>::iterator;
     /// @brief The maximum time difference between two TimeSteps for them to be considered "close" and thus joined together.
     Real epsilonTime;
-
     /**  @brief Constructs an empty TimeLine with a given epsilonTime.
      *
      *  epsilonTime is the maximum time difference between two TimeSteps
@@ -328,7 +334,6 @@ public:
      *  but it can be adjusted based on the expected time resolution.
      */
     TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
-
     /** @brief Inserts a TimeStep into the TimeLine.
      *
      *  If there are existing TimeSteps that are close in time to the new TimeStep,
@@ -380,7 +385,7 @@ public:
         return steps.rbegin()->time - steps.begin()->time;
     }
     /// @brief Removes the earliest TimeStep from the TimeLine.
-    void drop() {
+    void pop() {
         if(!steps.empty()) {
             steps.erase(steps.begin());
         }
@@ -446,7 +451,7 @@ public:
         // remove old timesteps if we exceed the limits
         while( (max_history_count>0 && timeline.size() > max_history_count) ||
                 (max_history_time>0 && timeline.totalTime() > max_history_time) ) {
-            timeline.drop();
+            timeline.pop();
         }
         return res;
     }
