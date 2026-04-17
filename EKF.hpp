@@ -3,6 +3,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <cassert>
 #include <functional>
 #include <set>
 #include <tuple>
@@ -405,6 +406,10 @@ public:
     bool empty() const {
         return steps.empty();
     }
+    /// @brief Returns the number of TimeSteps currently stored in the TimeLine.
+    size_t size() const {
+        return steps.size();
+    }
     /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
     Real totalTime() const {
         if(steps.empty()) {
@@ -446,7 +451,7 @@ public:
     /// @brief stores TimeSteps sorted by time.
     TimeLine<Real, n> timeline;
     State initial_state;
-    StataCovariance initial_state_covariance;
+    StateCovariance initial_state_covariance;
     /**  @brief The function that maps the previous state and time duration to
      * the tuple (predicted state, Jacobian, state transition noise covariance).
      *
@@ -491,7 +496,7 @@ public:
                 (max_history_time>0 && timeline.totalTime() > max_history_time)) ) {
             timeline.pop();
         }
-        return res;
+        return *res;
     }
 
     /// @brief Adds a new TimeStep with no measurement at the given time and
