@@ -37,8 +37,8 @@ bool isMatrixPositiveDefinite(const Matrix<Real, n, n>& A){
     if(A.rows() != A.cols() || !A.isApprox(A.transpose())){
         return false;
     }
-    LLT<Matrix<Real, n, n>> llt(A);
-    return llt.info() == Success;
+    LDLT<Matrix<Real, n, n>> ldlt(A);
+    return ldlt.info() == Success && ldlt.isPositive();
 }
 
 /*! A discrete point in time of a Kalman filter.
