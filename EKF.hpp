@@ -5,7 +5,7 @@
 #include <Eigen/Dense>
 #include <cassert>
 #include <functional>
-#include <set>
+#include <map>
 #include <tuple>
 #include <vector>
 
@@ -57,8 +57,6 @@ public:
     using Measurement = Matrix<Real, Dynamic, 1>;
     using MeasurementJacobian = Matrix<Real, Dynamic, n>;
     using MeasurementModel = function<tuple<Measurement, MeasurementJacobian>(const State&)>;
-    /// @brief The time associated with the observation.
-    Real time;
     /// @brief The state vector at the time of the observation (x).
     State state;
     /// @brief The covariance matrix of the state estimate (P).
@@ -90,7 +88,7 @@ public:
     /**
      * @brief Constructs an empty observation.
      *
-     * Should be overwritten with actual time, state etc. before being used.
+     * Should be overwritten with actual state, covariance etc. before being used.
      */
     TimeStep() {}
     /**
@@ -98,20 +96,17 @@ public:
      * optional state and no measurement.
      * @param time The time associated with the observation.
      */
-    TimeStep(Real time,
-                const State& state = undefined_state(),
-                const StateCovariance& state_covariance = undefined_state_covariance())
-        : time{time},
-          state{state},
+    TimeStep(const State& state = undefined_state(),
+             const StateCovariance& state_covariance = undefined_state_covariance())
+        : state{state},
           state_covariance{state_covariance},
           measurement{no_measurement()},
           measurement_model{no_measurement_model()},
           measurement_covariance{no_measurement_covariance()} {}
     /**
-     * @brief Constructs an observation with a given time, measurement,
+     * @brief Constructs an observation with a given measurement,
      * measurement function and measurement noise covariance.
      * @tparam m The dimension of the measurement vector (can be set to Dynamic).
-     * @param time The time associated with the observation.
      * @param measurement The actual measurement.
      * @param measurement_model The function that maps the state to the tuple
      * (measurement, measurement Jacobian).
@@ -119,13 +114,11 @@ public:
      * @param angle_indices The indices of the angles in the state vector.
      */
     template<int m>
-    TimeStep(Real time,
-             const Matrix<Real, m, 1>& measurement,
+    TimeStep(const Matrix<Real, m, 1>& measurement,
              const MeasurementModel& measurement_model,
              const Matrix<Real, m, m>& measurement_covariance,
              const vector<int>& angle_indices = {})
-        : time{time},
-          measurement{measurement},
+        : measurement{measurement},
           measurement_model{measurement_model},
           measurement_covariance{measurement_covariance},
           measurement_angle_indices{angle_indices}
@@ -134,7 +127,7 @@ public:
         assert(measurement.size() == measurement_covariance.rows());
     }
     /**
-     * @brief Constructs an observation with a given time, measurement,
+     * @brief Constructs an observation with a given measurement,
      * measurement Jacobian and measurement noise covariance.
      *
      * It is a useful constructor when the measurement function is linear,
@@ -142,13 +135,11 @@ public:
      * where H is the measurement Jacobian.
      */
     template<int m>
-    TimeStep(Real time,
-             const Matrix<Real, m, 1>& measurement,
+    TimeStep(const Matrix<Real, m, 1>& measurement,
              const Matrix<Real, m, n>& measurement_jacobian,
              const Matrix<Real, m, m>& measurement_covariance,
              const vector<int>& measurement_angle_indices = {})
-        : time{time},
-          measurement{measurement},
+        : measurement{measurement},
           measurement_model{[measurement_jacobian](const State& state) {
               return std::make_tuple(measurement_jacobian * state,
                                      measurement_jacobian);
@@ -259,12 +250,6 @@ private:
     }
 };
 
-/** @brief Comparison operator for TimeStep based on time. */
-template<typename Real, int n>
-bool operator<(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) {
-    return a.time < b.time;
-}
-
 /// @brief Concatenates two matrices vertically (stacks them on top of each other).
 template <typename Real, int K>
 Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
@@ -293,10 +278,9 @@ Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& 
  *
  *  This is useful when multiple measurements are taken at the same time or very close in time,
  *  and we want to treat them as a single measurement for the EKF update step.
- *  The resulting TimeStep will have the time of the first TimeStep.
- *  a concatenated measurement vector, a combined measurement model that
- *  concatenates the outputs of the two input measurement models,
- *  and a block diagonal measurement covariance matrix.
+ *  The resulting TimeStep will have a concatenated measurement vector,
+ *  a combined measurement model that concatenates the outputs of the two
+ *  input measurement models,and a block diagonal measurement covariance matrix.
  *
  *  @param a The first TimeStep to join.
  *  @param b The second TimeStep to join.
@@ -319,7 +303,6 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
         measurement_angle_indices.push_back(i + a.measurement.size());
     }
     TimeStep<Real, n> step(
-        a.time, // we can take either a.time or b.time since they are close
         concatVer(a.measurement, b.measurement),
         [a_model = a.measurement_model,
          b_model = b.measurement_model](const typename TimeStep<Real, n>::State& state) {
@@ -348,7 +331,7 @@ TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
 template <typename Real, int n>
 class TimeLine {
 public:
-    using iterator = typename std::multiset<TimeStep<Real, n>>::iterator;
+    using iterator = typename std::map<Real, TimeStep<Real, n>>::iterator;
     /// @brief The maximum time difference between two TimeSteps for them to be considered "close" and thus joined together.
     Real epsilonTime;
     /**  @brief Constructs an empty TimeLine with a given epsilonTime.
@@ -359,6 +342,28 @@ public:
      *  but it can be adjusted based on the expected time resolution.
      */
     TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
+    /** @brief Accesses the TimeStep at a given time.
+     *
+     *  If there is an existing TimeStep with a close enough time to t,
+     *  it will be returned. Otherwise, a new TimeStep with no measurement
+     *  will be created at time t and returned.
+     *
+     *  @param time The time at which to access the TimeStep.
+     *  @return A reference to the TimeStep at time (existing or newly created).
+     */
+    TimeStep<Real, n>& operator[](Real time) {
+        auto after = steps.lower_bound(time);
+        if(after != steps.end() && areClose(*after, TimeStep<Real, n>{})) {
+            return after->second;
+        }
+        if(after != steps.begin()) {
+            auto before = std::prev(after);
+            if(areClose(*before, TimeStep<Real, n>{})) {
+                return before->second;
+            }
+        }
+        return steps[time];
+    }
     /** @brief Inserts a TimeStep into the TimeLine.
      *
      *  If there are existing TimeSteps that are close in time to the new TimeStep,
@@ -367,28 +372,27 @@ public:
      *  Measurements taken at the same time or very close in time
      *  are treated as a single measurement for the EKF update step.
      *
+     *  @param time The time associated with the TimeStep to insert.
      *  @param timestep The TimeStep to insert into the TimeLine.
      *  @return An iterator pointing to the inserted (or joined) TimeStep.
      */
-    iterator insert(const TimeStep<Real, n>& timestep) {
+    iterator insert(Real time, const TimeStep<Real, n>& timestep) {
         // find timesteps just after the new timestep
-        auto after = steps.lower_bound(timestep);
+        auto after = steps.lower_bound(time);
         if(after != steps.end()) {
-            if(areClose(*after, timestep)) {
-                auto res = steps.emplace_hint(after, joinTimeSteps(*after, timestep));
-                steps.erase(after);
-                return res;
+            if(areClose(after->first, time)) {
+                after->second = joinTimeSteps(after->second, timestep);
+                return after;
             }
         }
         if(after != steps.begin()) {
             auto before = std::prev(after);
-            if(areClose(*before, timestep)) {
-                auto res = steps.emplace_hint(before, joinTimeSteps(*before, timestep));
-                steps.erase(before);
-                return res;
+            if(areClose(before->first, time)) {
+                before->second = joinTimeSteps(before->second, timestep);
+                return before;
             }
         }
-        return steps.emplace_hint(after, timestep);
+        return steps.emplace_hint(after, time, timestep);
     }
     /// @brief Returns an iterator to the beginning of the TimeLine.
     iterator begin() {
@@ -415,7 +419,7 @@ public:
         if(steps.empty()) {
             return Real(0);
         }
-        return steps.rbegin()->time - steps.begin()->time;
+        return steps.rbegin()->first - steps.begin()->first;
     }
     /// @brief Removes the earliest TimeStep from the TimeLine.
     void pop() {
@@ -425,10 +429,10 @@ public:
     }
 private:
     /// @brief stores the TimeSteps sorted by time.
-    std::multiset<TimeStep<Real, n>> steps;
+    std::map<Real, TimeStep<Real, n>> steps;
     /// @brief a helper function to check if two TimeSteps are close in time.
-    bool areClose(const TimeStep<Real, n>& a, const TimeStep<Real, n>& b) const {
-        return std::abs(a.time - b.time) < epsilonTime;
+    bool areClose(Real time1, Real time2) const {
+        return std::abs(time1 - time2) < epsilonTime;
     }
 };
 
@@ -450,8 +454,19 @@ public:
     }
     /// @brief stores TimeSteps sorted by time.
     TimeLine<Real, n> timeline;
+    /// @brief the initial state vector for the EKF when there are no previous steps.
     State initial_state;
+    /// @brief the initial state covariance matrix for the EKF.
     StateCovariance initial_state_covariance;
+    /// @brief resets the EKF to the initial state at a given time.
+    void init(Real t, const State& state) {
+        timeline.clear();
+        addTimeStep(TimeStep<Real, n>(t, state, initial_state_covariance));
+    }
+    /// @brief resets the EKF to the initial state at a given time with default state.
+    void init(Real t) {
+        init(t, initial_state);
+    }
     /**  @brief The function that maps the previous state and time duration to
      * the tuple (predicted state, Jacobian, state transition noise covariance).
      *
@@ -463,7 +478,7 @@ public:
      *  In many cases, the covariance matrix can be Q*dt for some constant Q.
      */
     virtual std::tuple<State, StateJacobian, StateCovariance> predict(
-        const State& x, Real dt) = 0;
+        const State& state, Real dt) = 0;
     /** @brief Adds a new TimeStep and performs the EKF prediction and update steps.
      *
      *  If there already is a TimeStep with a close enough time,
@@ -474,20 +489,22 @@ public:
      *  @param timestep The TimeStep to add to the TimeLine and perform EKF steps for.
      *  @return reference to the added (or joined) TimeStep in the TimeLine.
      */
-    TimeStep<Real, n>& addTimeStep(const TimeStep<Real, n>& timestep) {
-        if(!timeline.empty() && timeline.begin()->time > timestep.time) {
+    const TimeStep<Real, n>& addTimeStep(Real time,
+                                         const TimeStep<Real, n>& timestep)
+    {
+        if(!timeline.empty() && timeline.begin()->first > time) {
             // do not add old timesteps
-            return timeline.begin();
+            return timeline.begin()->second;
         }
-        auto res = timeline.insert(timestep);
-        for(auto it = res; it != timeline.end(); it++) {
-            if(it == timeline.begin()) {
+        auto res = timeline.insert(time, timestep);
+        for(auto next = res; next != timeline.end(); next++) {
+            if(next == timeline.begin()) {
                 continue;
             }
-            auto prev = std::prev(it);
-            Real dt = it->time - prev->time;
-            auto [x_pred, F, Q] = predict(prev->state, dt);
-            it->update(*prev, Q, F, x_pred);
+            auto prev = std::prev(next);
+            Real dt = next->first - prev->first;
+            auto [x_pred, F, Q] = predict(prev->second.state, dt);
+            next->second.update(prev->second, Q, F, x_pred);
         }
         // remove old timesteps if we exceed the limits
         while( timeline.begin() != res && // explicitly forbid removing the new item
@@ -496,13 +513,13 @@ public:
                 (max_history_time>0 && timeline.totalTime() > max_history_time)) ) {
             timeline.pop();
         }
-        return *res;
+        return res->second;
     }
 
     /// @brief Adds a new TimeStep with no measurement at the given time and
     /// performs the EKF prediction step based on the previous TimeStep.
-    TimeStep<Real, n>& addNoMeasurement(Real time) {
-        return addTimeStep(TimeStep<Real, n>(time));
+    const TimeStep<Real, n>& addNoMeasurement(Real time) {
+        return addTimeStep(time, TimeStep<Real, n>());
     }
     /** @brief Adds a new general TimeStep with a measurement at the given time.
      *
@@ -516,16 +533,16 @@ public:
      * @return reference to the added (or joined) TimeStep in the TimeLine.
      */
     template<int m>
-    TimeStep<Real, n>& addMeasurement(
+    const TimeStep<Real, n>& addMeasurement(
                              Real time,
                              const Matrix<Real, m, 1>& measurement,
                              const MeasurementModel& measurement_model,
                              const Matrix<Real, m, m>& measurement_covariance,
                              const vector<int>& measurement_angle_indices = {})
     {
-        return addTimeStep(TimeStep<Real, n>(
-            time, measurement, measurement_model, measurement_covariance,
-            measurement_angle_indices));
+        return addTimeStep(time,
+            TimeStep<Real, n>(measurement, measurement_model,
+            measurement_covariance, measurement_angle_indices));
     }
 
     /** @brief Adds a new TimeStep with a linear measurement at the given time.
@@ -543,16 +560,16 @@ public:
      * @return reference to the added (or joined) TimeStep in the TimeLine.
      */
     template<int m>
-    TimeStep<Real, n>& addMeasurement(
+    const TimeStep<Real, n>& addMeasurement(
                              Real time,
                              const Matrix<Real, m, 1>& measurement,
                              const Matrix<Real, m, n>& measurement_jacobian,
                              const Matrix<Real, m, m>& measurement_covariance,
                              const vector<int>& measurement_angle_indices = {})
     {
-        return addTimeStep(TimeStep<Real, n>(
-            time, measurement, measurement_jacobian, measurement_covariance,
-            measurement_angle_indices));
+        return addTimeStep(time,
+            TimeStep<Real, n>(measurement, measurement_jacobian,
+            measurement_covariance, measurement_angle_indices));
     }
 
     /** @brief Gets the state and covariance at a given time.
@@ -562,12 +579,12 @@ public:
      *  Otherwise, a new TimeStep with no measurement will be added at the given time,
      *  and the state and covariance will be predicted based on the previous TimeStep.
      *
-     *  @param t The time at which to get the state and covariance.
+     *  @param time The time at which to get the state and covariance.
      *  @return A tuple containing the state vector and covariance matrix at time t.
      */
-    tuple<State, StateCovariance> getState(Real t) {
+    tuple<State, StateCovariance> getState(Real time) {
         // this call might not add anything and just find an existing TimeStep
-        auto step = addNoMeasurement(t);
+        auto step = addNoMeasurement(time);
         return {step.state, step.state_covariance};
     }
 };

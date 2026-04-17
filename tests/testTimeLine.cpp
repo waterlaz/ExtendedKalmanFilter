@@ -29,10 +29,10 @@ int main() {
         Matrix<double, 1, 1> z(i);
         Matrix<double, 1, 1> J(1);
         Matrix<double, 1, 1> C(1);
-        timeline.insert(TimeStep(times[i], z, J, C));
+        timeline.insert(times[i], TimeStep(z, J, C));
     }
     int i = 0;
-    for(auto& step : timeline){
+    for(auto& [t, step] : timeline){
         //std::cout<<step.measurement.transpose() << " = " << expected[i].transpose() << std::endl;
         if((step.measurement - expected[i]).norm() > 1e-6){
             std::cerr << "Test failed at index " << i << std::endl;
