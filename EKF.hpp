@@ -84,13 +84,6 @@ public:
      *  then anglesIndices should be set to {2} (assuming 0-based indexing).
      */
     vector<int> measurement_angle_indices;
-
-    /**
-     * @brief Constructs an empty observation.
-     *
-     * Should be overwritten with actual state, covariance etc. before being used.
-     */
-    TimeStep() {}
     /**
      * @brief Constructs an observation with a given time,
      * optional state and no measurement.
@@ -160,9 +153,9 @@ public:
      * @param predicted_state The predicted state vector based on the state transition function.
      */
     void update(const TimeStep<Real, n>& previous,
-                const StateCovariance& process_noise_covariance,
+                const State& predicted_state,
                 const StateTransition& transition_jacobian,
-                const State& predicted_state)
+                const StateCovariance& process_noise_covariance)
     {
         StateCovariance I = StateCovariance::Identity();
         const auto& F = transition_jacobian;
@@ -177,6 +170,8 @@ public:
         assert(isMatrixPositiveDefinite(P_prev));
 
         auto P_pred = F * sym(P_prev) * F.transpose() + Q;
+        //std::cout<<"P_pred = \n"
+        //         <<F * sym(P_prev) * F.transpose()<<"\n+\n"<<Q<<"\n\n\n";
         if(hasMeasurement()) {
             auto [z_pred, H] = measurement_model(x_pred);
             assert(z_pred.size() == measurement.size());
@@ -250,192 +245,6 @@ private:
     }
 };
 
-/// @brief Concatenates two matrices vertically (stacks them on top of each other).
-template <typename Real, int K>
-Matrix<Real, Dynamic, K> concatVer(const Matrix<Real, Dynamic, K>& A,
-                                   const Matrix<Real, Dynamic, K>& B)
-{
-    assert(A.cols() == B.cols());
-    Matrix<Real, Dynamic, K> result(A.rows() + B.rows(), A.cols());
-    result << A,
-              B;
-    return result;
-}
-
-/// @brief Concatenates two matrices diagonally (places them in the top-left and bottom-right corners, filling the rest with zeros).
-template <typename Real>
-Matrix<Real, Dynamic, Dynamic> concatDiag(const Matrix<Real, Dynamic, Dynamic>& A,
-                                          const Matrix<Real, Dynamic, Dynamic>& B)
-{
-    assert(A.cols() == A.rows() && B.cols() == B.rows());
-    Matrix<Real, Dynamic, Dynamic> result(A.rows() + B.rows(), A.cols() + B.cols());
-    result << A, Matrix<Real, Dynamic, Dynamic>::Zero(A.rows(), B.cols()),
-              Matrix<Real, Dynamic, Dynamic>::Zero(B.rows(), A.cols()), B;
-    return result;
-}
-
-/** @brief Joins two TimeSteps that are close in time into a single TimeStep.
- *
- *  This is useful when multiple measurements are taken at the same time or very close in time,
- *  and we want to treat them as a single measurement for the EKF update step.
- *  The resulting TimeStep will have a concatenated measurement vector,
- *  a combined measurement model that concatenates the outputs of the two
- *  input measurement models,and a block diagonal measurement covariance matrix.
- *
- *  @param a The first TimeStep to join.
- *  @param b The second TimeStep to join.
- *  @return A new TimeStep that combines the measurements of a and b.
- */
-template <typename Real, int n>
-TimeStep<Real, n> joinTimeSteps(const TimeStep<Real, n>& a,
-                                const TimeStep<Real, n>& b)
-{
-    if(!a.hasMeasurement()) {
-        // a is virtually empty, so we can just take b
-        return b;
-    }
-    if(!b.hasMeasurement()) {
-        // b is virtually empty, so we can just take a
-        return a;
-    }
-    vector<int> measurement_angle_indices = a.measurement_angle_indices;
-    for(int i : b.measurement_angle_indices) {
-        measurement_angle_indices.push_back(i + a.measurement.size());
-    }
-    TimeStep<Real, n> step(
-        concatVer(a.measurement, b.measurement),
-        [a_model = a.measurement_model,
-         b_model = b.measurement_model](const typename TimeStep<Real, n>::State& state) {
-            auto [z_a, H_a] = a_model(state);
-            auto [z_b, H_b] = b_model(state);
-            Matrix<Real, Dynamic, 1> z = concatVer(z_a, z_b);
-            Matrix<Real, Dynamic, Dynamic> H = concatVer(H_a, H_b);
-            return std::make_tuple(z, H);
-        },
-        concatDiag(a.measurement_covariance, b.measurement_covariance),
-        measurement_angle_indices);
-    if(a.hasEstimatedState()) {
-        step.state = a.state;
-        step.state_covariance = a.state_covariance;
-    } else {
-        step.state = b.state;
-        step.state_covariance = b.state_covariance;
-    }
-    return step;
-}
-
-/*! A timeline of TimeSteps for the EKF.
- *  @tparam Real The floating point type to use (e.g. float, double)
- *  @tparam n The dimension of the state vector (can be set to Dynamic)
- * */
-template <typename Real, int n>
-class TimeLine {
-public:
-    using iterator = typename std::map<Real, TimeStep<Real, n>>::iterator;
-    /// @brief The maximum time difference between two TimeSteps for them to be considered "close" and thus joined together.
-    Real epsilonTime;
-    /**  @brief Constructs an empty TimeLine with a given epsilonTime.
-     *
-     *  epsilonTime is the maximum time difference between two TimeSteps
-     *  for them to be considered "close" and thus joined together.
-     *  The default value of 1e-9 is suitable for most applications,
-     *  but it can be adjusted based on the expected time resolution.
-     */
-    TimeLine(Real epsilonTime = Real(1e-9)) : epsilonTime{epsilonTime} {}
-    /** @brief Accesses the TimeStep at a given time.
-     *
-     *  If there is an existing TimeStep with a close enough time to t,
-     *  it will be returned. Otherwise, a new TimeStep with no measurement
-     *  will be created at time t and returned.
-     *
-     *  @param time The time at which to access the TimeStep.
-     *  @return A reference to the TimeStep at time (existing or newly created).
-     */
-    TimeStep<Real, n>& operator[](Real time) {
-        auto after = steps.lower_bound(time);
-        if(after != steps.end() && areClose(*after, TimeStep<Real, n>{})) {
-            return after->second;
-        }
-        if(after != steps.begin()) {
-            auto before = std::prev(after);
-            if(areClose(*before, TimeStep<Real, n>{})) {
-                return before->second;
-            }
-        }
-        return steps[time];
-    }
-    /** @brief Inserts a TimeStep into the TimeLine.
-     *
-     *  If there are existing TimeSteps that are close in time to the new TimeStep,
-     *  they will be joined together using the @ref joinTimeSteps function,
-     *  and the resulting TimeStep will replace the existing ones.
-     *  Measurements taken at the same time or very close in time
-     *  are treated as a single measurement for the EKF update step.
-     *
-     *  @param time The time associated with the TimeStep to insert.
-     *  @param timestep The TimeStep to insert into the TimeLine.
-     *  @return An iterator pointing to the inserted (or joined) TimeStep.
-     */
-    iterator insert(Real time, const TimeStep<Real, n>& timestep) {
-        // find timesteps just after the new timestep
-        auto after = steps.lower_bound(time);
-        if(after != steps.end()) {
-            if(areClose(after->first, time)) {
-                after->second = joinTimeSteps(after->second, timestep);
-                return after;
-            }
-        }
-        if(after != steps.begin()) {
-            auto before = std::prev(after);
-            if(areClose(before->first, time)) {
-                before->second = joinTimeSteps(before->second, timestep);
-                return before;
-            }
-        }
-        return steps.emplace_hint(after, time, timestep);
-    }
-    /// @brief Returns an iterator to the beginning of the TimeLine.
-    iterator begin() {
-        return steps.begin();
-    }
-    /// @brief Returns an iterator to the end of the TimeLine.
-    iterator end() {
-        return steps.end();
-    }
-    /// @brief Clears all TimeSteps from the TimeLine.
-    void clear() {
-        steps.clear();
-    }
-    /// @brief Checks if the TimeLine is empty (i.e. contains no TimeSteps).
-    bool empty() const {
-        return steps.empty();
-    }
-    /// @brief Returns the number of TimeSteps currently stored in the TimeLine.
-    size_t size() const {
-        return steps.size();
-    }
-    /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
-    Real totalTime() const {
-        if(steps.empty()) {
-            return Real(0);
-        }
-        return steps.rbegin()->first - steps.begin()->first;
-    }
-    /// @brief Removes the earliest TimeStep from the TimeLine.
-    void pop() {
-        if(!steps.empty()) {
-            steps.erase(steps.begin());
-        }
-    }
-private:
-    /// @brief stores the TimeSteps sorted by time.
-    std::map<Real, TimeStep<Real, n>> steps;
-    /// @brief a helper function to check if two TimeSteps are close in time.
-    bool areClose(Real time1, Real time2) const {
-        return std::abs(time1 - time2) < epsilonTime;
-    }
-};
-
 template <typename Real, int n>
 class EKF {
 public:
@@ -447,25 +256,15 @@ public:
     size_t max_history_count = 1000;
     /// @brief maximum period of time to keep in the TimeLine (or negative to ignore).
     Real max_history_time = -1;
-    /// @brief the time precision for joining TimeSteps in the TimeLine.
-    /// TimeSteps with time difference less than epsilonTime will be joined together.
-    void setTimePrecision(Real epsilonTime) {
-        timeline.epsilonTime = epsilonTime;
-    }
     /// @brief stores TimeSteps sorted by time.
-    TimeLine<Real, n> timeline;
+    std::multimap<Real, TimeStep<Real, n>> timeline;
     /// @brief the initial state vector for the EKF when there are no previous steps.
     State initial_state;
     /// @brief the initial state covariance matrix for the EKF.
     StateCovariance initial_state_covariance;
-    /// @brief resets the EKF to the initial state at a given time.
-    void init(Real t, const State& state) {
+    /// @brief resets the EKF to the initial state.
+    void reset(Real t, const State& state) {
         timeline.clear();
-        addTimeStep(TimeStep<Real, n>(t, state, initial_state_covariance));
-    }
-    /// @brief resets the EKF to the initial state at a given time with default state.
-    void init(Real t) {
-        init(t, initial_state);
     }
     /**  @brief The function that maps the previous state and time duration to
      * the tuple (predicted state, Jacobian, state transition noise covariance).
@@ -481,37 +280,36 @@ public:
         const State& state, Real dt) = 0;
     /** @brief Adds a new TimeStep and performs the EKF prediction and update steps.
      *
-     *  If there already is a TimeStep with a close enough time,
-     *  the new timestep will be joined with it using the @ref joinTimeSteps function
-     *  and the resulting TimeStep will replace the existing one.
      *  The EKF prediction and update steps will be performed for the new
      *  TimeStep and all subsequent TimeSteps in the TimeLine.
+     *  @param time The time associated with the new TimeStep to add to the TimeLine.
      *  @param timestep The TimeStep to add to the TimeLine and perform EKF steps for.
-     *  @return reference to the added (or joined) TimeStep in the TimeLine.
+     *  @return reference to the added TimeStep in the TimeLine.
      */
     const TimeStep<Real, n>& addTimeStep(Real time,
                                          const TimeStep<Real, n>& timestep)
     {
-        if(!timeline.empty() && timeline.begin()->first > time) {
-            // do not add old timesteps
+        if(timeline.empty()) {
+            timeline.insert({time,
+                TimeStep<Real, n>(initial_state, initial_state_covariance)});
+        } else if(timeline.begin()->first > time) {
             return timeline.begin()->second;
         }
-        auto res = timeline.insert(time, timestep);
-        for(auto next = res; next != timeline.end(); next++) {
-            if(next == timeline.begin()) {
-                continue;
+        auto res = timeline.insert({time, timestep});
+        for(auto cur = res; cur != timeline.end(); cur++) {
+            if(cur != timeline.begin()) {
+                auto prev = std::prev(cur);
+                Real dt = cur->first - prev->first;
+                auto [x_pred, F, Q] = predict(prev->second.state, dt);
+                cur->second.update(prev->second, x_pred, F, Q);
             }
-            auto prev = std::prev(next);
-            Real dt = next->first - prev->first;
-            auto [x_pred, F, Q] = predict(prev->second.state, dt);
-            next->second.update(prev->second, Q, F, x_pred);
         }
         // remove old timesteps if we exceed the limits
         while( timeline.begin() != res && // explicitly forbid removing the new item
                std::next(timeline.begin()) != res && // and the one before it
                ((max_history_count>0 && timeline.size() > max_history_count) ||
-                (max_history_time>0 && timeline.totalTime() > max_history_time)) ) {
-            timeline.pop();
+                (max_history_time>0 && totalTime() > max_history_time)) ) {
+            timeline.erase(timeline.begin());
         }
         return res->second;
     }
@@ -586,6 +384,21 @@ public:
         // this call might not add anything and just find an existing TimeStep
         auto step = addNoMeasurement(time);
         return {step.state, step.state_covariance};
+    }
+    tuple<State, StateCovariance> getLastState() {
+        if(timeline.empty()) {
+            return {initial_state, initial_state_covariance};
+        }
+        auto last = std::prev(timeline.end());
+        return {last->second.state, last->second.state_covariance};
+    }
+private:
+    /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
+    Real totalTime() const {
+        if(timeline.empty()) {
+            return Real(0);
+        }
+        return timeline.rbegin()->first - timeline.begin()->first;
     }
 };
 
