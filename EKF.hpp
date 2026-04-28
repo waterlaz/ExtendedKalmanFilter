@@ -3,9 +3,12 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <functional>
 #include <map>
+#include <stdexcept>
 #include <tuple>
 #include <variant>
 #include <vector>
@@ -16,6 +19,19 @@ using std::function;
 using std::vector;
 using std::tuple;
 
+
+/** @brief Computes the inverse CDF of the standard normal distribution.
+ *
+ *  This function uses Peter J. Acklam's approximation for the inverse CDF
+ *  of the normal distribution, which is accurate to about 1.15e-9 for all p in (0,1).
+ *
+ *  @tparam Real The floating point type to use (e.g. float, double).
+ *  @param p The probability value for which to compute the inverse CDF,
+ *  must be in the range (0,1).
+ *  @return The number z such that the probability of a standard normal random
+ *  variable being less than or equal to z is p.
+ *  @throws std::domain_error if p is not in the range (0,1).
+ */
 template<typename Real>
 Real normal_inverse_cdf(Real p) {
     // Peter J. Acklam's approximation
@@ -74,6 +90,18 @@ Real normalizeAngle(Real angle) {
     return angle - TWO_PI * std::floor((angle + PI) / TWO_PI);
 }
 
+/** @brief Checks if a matrix is positive definite.
+ *
+ *  This function checks if a given square matrix is positive definite
+ *  by verifying that it is symmetric and that its LDLT decomposition
+ *  is successful and indicates positive definiteness.
+ *  An empty matrix (0x0) is considered positive definite by definition.
+ *
+ *  @tparam Real The floating point type of the matrix elements (e.g. float, double).
+ *  @tparam n The dimension of the square matrix (can be set to Dynamic).
+ *  @param A The matrix to check for positive definiteness.
+ *  @return true if the matrix is positive definite, false otherwise.
+ */
 template <typename Real, int n>
 bool isMatrixPositiveDefinite(const Matrix<Real, n, n>& A) {
     if constexpr (n == 0) {
@@ -106,10 +134,7 @@ public:
      *
      *  This is useful for non-linear measurements.
      */
-    static std::pair<Measurement, MeasurementJacobian> measure(const State& state) {
-        // implement the measurement model here
-        return {};
-    }
+    static std::pair<Measurement, MeasurementJacobian> measure(const State& state) = delete;
     /**  @brief Indices of the angles in the measurement vector.
      *
      *  Any measurement variable that represents an angle (e.g. orientation)
@@ -118,7 +143,7 @@ public:
      *  For example, if the state vector is [x, y, theta] and theta is an angle,
      *  then anglesIndices should be set to {2} (assuming 0-based indexing).
      */
-    static vector<int> measurementAngleIndices() {
+    static std::array<size_t, 0> measurementAngleIndices() {
         return {};
     }
     /// @brief The gating probability for outlier rejection based on the
@@ -139,8 +164,13 @@ public:
 
 /*! A discrete point in time of a Kalman filter.
  *  Most of the filter math is hidden within this class in the update() method.
- *  @tparam Real The floating point type to use (e.g. float, double)
- *  @tparam n The dimension of the state vector (can be set to Dynamic)
+ *  Each TimeStep can represent either a prediction step (with no measurement)
+ *  or an update step (with a measurement).
+ *  The EKF class manages a timeline of these TimeSteps,
+ *  and performs the necessary prediction and update steps.
+ *
+ *  The TimeStep class is designed to be flexible and can work with
+ *  any measurement model that defines the necessary types and functions.
  * */
 template <typename MeasurementModel>
 class TimeStep {
