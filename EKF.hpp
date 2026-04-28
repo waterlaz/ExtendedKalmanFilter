@@ -16,6 +16,47 @@ using std::function;
 using std::vector;
 using std::tuple;
 
+template<typename Real>
+Real normal_inverse_cdf(Real p) {
+    // Peter J. Acklam's approximation
+    if (p <= 0 || p >= 1) throw std::domain_error("p must be in (0,1)");
+
+    static const Real a[] = {
+        -3.969683028665376e+01,  2.209460984245205e+02,
+        -2.759285104469687e+02,  1.383577518672690e+02,
+        -3.066479806614716e+01,  2.506628277459239e+00
+    };
+    static const Real b[] = {
+        -5.447609879822406e+01,  1.615858368580409e+02,
+        -1.556989798598866e+02,  6.680131188771972e+01,
+        -1.328068155288572e+01
+    };
+    static const Real c[] = {
+        -7.784894002430293e-03, -3.223964580411365e-01,
+        -2.400758277161838e+00, -2.549732539343734e+00,
+         4.374664141464968e+00,  2.938163982698783e+00
+    };
+    static const Real d[] = {
+         7.784695709041462e-03,  3.224671290700398e-01,
+         2.445134137142996e+00,  3.754408661907416e+00
+    };
+
+    if (p < 0.02425) {
+        Real q = std::sqrt(-2 * std::log(p));
+        return (((((c[0]*q + c[1])*q + c[2])*q + c[3])*q + c[4])*q + c[5]) /
+               ((((d[0]*q + d[1])*q + d[2])*q + d[3])*q + 1);
+    } else if (p > 1 - 0.02425) {
+        Real q = std::sqrt(-2 * std::log(1 - p));
+        return -(((((c[0]*q + c[1])*q + c[2])*q + c[3])*q + c[4])*q + c[5]) /
+                 ((((d[0]*q + d[1])*q + d[2])*q + d[3])*q + 1);
+    } else {
+        Real q = p - 0.5;
+        Real r = q * q;
+        return (((((a[0]*r + a[1])*r + a[2])*r + a[3])*r + a[4])*r + a[5]) * q /
+               (((((b[0]*r + b[1])*r + b[2])*r + b[3])*r + b[4])*r + 1);
+    }
+}
+
 /** @brief Normalizes an angle to the range [-pi, pi].
  *
  *  This function takes an angle in radians and wraps it to the range [-pi, pi].
@@ -45,14 +86,6 @@ bool isMatrixPositiveDefinite(const Matrix<Real, n, n>& A) {
         return ldlt.info() == Success && ldlt.isPositive();
     }
 }
-
-// a threshold for outlier rejection based on the
-// chi-squared distribution with m degrees of freedom and 99% confidence level.
-//Real chi2_threshold(int m) {
-//    Real z = Real(2.326);
-//    Real a = 2.0 / (9.0 * m);
-//    return m * pow(1 - a + z * sqrt(a), 3);
-//}
 
 template <typename R, int n, int m>
 class GenericMeasurementModel {
@@ -88,22 +121,24 @@ public:
     static vector<int> measurementAngleIndices() {
         return {};
     }
-    /// @brief A threshold for outlier rejection based on the Mahalanobis distance.
-    static Real threashold() {
-        return -1.0;
-    }
+    /// @brief The gating probability for outlier rejection based on the
+    /// Mahalanobis distance.
+    static constexpr Real gatingProbability = 0.99;
 };
 
 template <typename Real, int n>
 class NoMeasurementModel : public GenericMeasurementModel<Real, n, 0> {
 public:
-    static std::pair<Matrix<Real, 0, 1>, Matrix<Real, 0, n>> measure(const Matrix<Real, n, 1>&) {
+    static std::pair<Matrix<Real, 0, 1>, Matrix<Real, 0, n>>
+        measure(const Matrix<Real, n, 1>&)
+    {
         return {Matrix<Real, 0, 1>(), Matrix<Real, 0, n>()};
     }
 };
 
+
 /*! A discrete point in time of a Kalman filter.
- *  Most of the filter math is hidden within this class in the predict() method.
+ *  Most of the filter math is hidden within this class in the update() method.
  *  @tparam Real The floating point type to use (e.g. float, double)
  *  @tparam n The dimension of the state vector (can be set to Dynamic)
  * */
@@ -191,15 +226,16 @@ public:
             MeasurementCovariance S = H * sym(P_pred) * H.transpose() + R;
             LDLT<MeasurementCovariance> ldlt(S);
             if(ldlt.info() != Success || !ldlt.isPositive()) {
-                // try to fix the covariance matrix
+                // try to recover and fix the covariance matrix
                 state_covariance = 0.5*(P_pred + P_pred.transpose());
                 Real min_diag = state_covariance.diagonal().minCoeff();
-                state_covariance += std::abs(min_diag) * I;
+                state_covariance += 2*std::abs(min_diag) * I;
                 return;
             }
-            if(MeasurementModel::threashold() > 0) {
+            Real threshold = getMahalanobisThreshold();
+            if(threshold > 0) {
                 Real mahalanobisDist = y.transpose() * ldlt.solve(y);
-                if(mahalanobisDist > MeasurementModel::threashold()) {
+                if(mahalanobisDist > threshold) {
                     // the measurement is too far from the prediction,
                     // we ignore it and just use the predicted state and covariance.
                     return;
@@ -254,16 +290,23 @@ private:
     static MeasurementJacobian no_measurement_jacobian() {
         return MeasurementJacobian();
     }
-    static MeasurementModel no_measurement_model() {
-        return [](const State&) {
-            return std::make_tuple(no_measurement(), no_measurement_jacobian());
-        };
-    }
     // a usefull optimisation to treat symmetric matrices in computations
     // also improves numerical stability.
     template <typename Derived>
     static inline auto sym(const Eigen::MatrixBase<Derived>& m) {
         return m.template selfadjointView<Eigen::Lower>();
+    }
+    Real getMahalanobisThreshold() {
+        static const Real value = computeMahalanobis();
+        return value;
+    }
+    // a threshold for outlier rejection based on the
+    // chi-squared distribution with m degrees of freedom and 99% confidence level.
+    Real computeMahalanobis() {
+        Real m = measurement.size() > 0 ? measurement.size() : 1;
+        Real z = normal_inverse_cdf(MeasurementModel::gatingProbability);
+        Real a = 2.0 / (9.0 * m);
+        return m * pow(1 - a + z * sqrt(a), 3);
     }
 };
 
@@ -274,7 +317,7 @@ public:
     using StateCovariance = Matrix<Real, n, n>;
     using StateJacobian = Matrix<Real, n, n>;
     using TimeStepVariant = std::variant<TimeStep<NoMeasurementModel<Real, n>>,
-                                 TimeStep<MeasurementModels>...>;
+                                         TimeStep<MeasurementModels>...>;
     //using MeasurementModel = typename TimeStep<Real, n>::MeasurementModel;
     /// @brief maximum number of TimeSteps to keep in the TimeLine (or 0 to ingore).
     size_t max_history_count = 1000;
@@ -287,7 +330,7 @@ public:
     /// @brief the initial state covariance matrix for the EKF.
     StateCovariance initial_state_covariance;
     /// @brief resets the EKF to the initial state.
-    void reset(Real t, const State& state) {
+    void reset() {
         timeline.clear();
     }
     /**  @brief The function that maps the previous state and time duration to
