@@ -6,19 +6,13 @@
 #include <array>
 #include <cassert>
 #include <cmath>
-#include <functional>
 #include <map>
 #include <stdexcept>
 #include <tuple>
 #include <variant>
 #include <vector>
 
-namespace EKFNamespace {
-using namespace Eigen;
-using std::function;
-using std::vector;
-using std::tuple;
-
+namespace ekf {
 
 /** @brief Computes the inverse CDF of the standard normal distribution.
  *
@@ -33,7 +27,7 @@ using std::tuple;
  *  @throws std::domain_error if p is not in the range (0,1).
  */
 template<typename Real>
-Real normal_inverse_cdf(Real p) {
+Real normalInverseCDF(Real p) {
     // Peter J. Acklam's approximation
     if (p <= 0 || p >= 1) throw std::domain_error("p must be in (0,1)");
 
@@ -103,15 +97,15 @@ Real normalizeAngle(Real angle) {
  *  @return true if the matrix is positive definite, false otherwise.
  */
 template <typename Real, int n>
-bool isMatrixPositiveDefinite(const Matrix<Real, n, n>& A) {
+bool isMatrixPositiveDefinite(const Eigen::Matrix<Real, n, n>& A) {
     if constexpr (n == 0) {
         return true; // an empty matrix is considered positive definite
     } else {
         if(A.rows() != A.cols() || !A.isApprox(A.transpose())) {
             return false;
         }
-        LDLT<Matrix<Real, n, n>> ldlt(A);
-        return ldlt.info() == Success && ldlt.isPositive();
+        Eigen::LDLT<Eigen::Matrix<Real, n, n>> ldlt(A);
+        return ldlt.info() == Eigen::Success && ldlt.isPositive();
     }
 }
 
@@ -119,12 +113,12 @@ template <typename R, int n, int m>
 class GenericMeasurementModel {
 public:
     using Real = R;
-    using State = Matrix<Real, n, 1>;
-    using StateCovariance = Matrix<Real, n, n>;
-    using StateTransition = Matrix<Real, n, n>;
-    using Measurement = Matrix<Real, m, 1>;
-    using MeasurementJacobian = Matrix<Real, m, n>;
-    using MeasurementCovariance = Matrix<Real, m, m>;
+    using State = Eigen::Matrix<Real, n, 1>;
+    using StateCovariance = Eigen::Matrix<Real, n, n>;
+    using StateTransition = Eigen::Matrix<Real, n, n>;
+    using Measurement = Eigen::Matrix<Real, m, 1>;
+    using MeasurementJacobian = Eigen::Matrix<Real, m, n>;
+    using MeasurementCovariance = Eigen::Matrix<Real, m, m>;
     /**  @brief The function that maps the state to the tuple (measurement, Jacobian).
      *
      *  This function takes a state vector as input and returns a tuple containing:
@@ -154,10 +148,10 @@ public:
 template <typename Real, int n>
 class NoMeasurementModel : public GenericMeasurementModel<Real, n, 0> {
 public:
-    static std::pair<Matrix<Real, 0, 1>, Matrix<Real, 0, n>>
-        measure(const Matrix<Real, n, 1>&)
+    static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
+        measure(const Eigen::Matrix<Real, n, 1>&)
     {
-        return {Matrix<Real, 0, 1>(), Matrix<Real, 0, n>()};
+        return {Eigen::Matrix<Real, 0, 1>(), Eigen::Matrix<Real, 0, n>()};
     }
 };
 
@@ -182,7 +176,7 @@ public:
     using Measurement = typename MeasurementModel::Measurement;
     using MeasurementJacobian = typename MeasurementModel::MeasurementJacobian;
     using MeasurementCovariance = typename MeasurementModel::MeasurementCovariance;
-    using KalmanGain = Matrix<Real, State::RowsAtCompileTime,
+    using KalmanGain = Eigen::Matrix<Real, State::RowsAtCompileTime,
                                     Measurement::RowsAtCompileTime>;
     /// @brief The state vector at the time of the observation (x).
     State state;
@@ -254,12 +248,12 @@ public:
             }
 
             MeasurementCovariance S = H * sym(P_pred) * H.transpose() + R;
-            LDLT<MeasurementCovariance> ldlt(S);
-            if(ldlt.info() != Success || !ldlt.isPositive()) {
+            Eigen::LDLT<MeasurementCovariance> ldlt(S);
+            if(ldlt.info() != Eigen::Success || !ldlt.isPositive()) {
                 // try to recover and fix the covariance matrix
                 state_covariance = 0.5*(P_pred + P_pred.transpose());
                 Real min_diag = state_covariance.diagonal().minCoeff();
-                state_covariance += 2*std::abs(min_diag) * I;
+                state_covariance += 2.0*std::abs(min_diag) * I;
                 return;
             }
             Real threshold = getMahalanobisThreshold();
@@ -334,7 +328,7 @@ private:
     // chi-squared distribution with m degrees of freedom and 99% confidence level.
     Real computeMahalanobis() {
         Real m = measurement.size() > 0 ? measurement.size() : 1;
-        Real z = normal_inverse_cdf(MeasurementModel::gatingProbability);
+        Real z = normalInverseCDF(MeasurementModel::gatingProbability);
         Real a = 2.0 / (9.0 * m);
         return m * pow(1 - a + z * sqrt(a), 3);
     }
@@ -343,9 +337,9 @@ private:
 template <typename Real, int n, typename... MeasurementModels>
 class EKF {
 public:
-    using State = Matrix<Real, n, 1>;
-    using StateCovariance = Matrix<Real, n, n>;
-    using StateJacobian = Matrix<Real, n, n>;
+    using State = Eigen::Matrix<Real, n, 1>;
+    using StateCovariance = Eigen::Matrix<Real, n, n>;
+    using StateJacobian = Eigen::Matrix<Real, n, n>;
     using TimeStepVariant = std::variant<TimeStep<NoMeasurementModel<Real, n>>,
                                          TimeStep<MeasurementModels>...>;
     //using MeasurementModel = typename TimeStep<Real, n>::MeasurementModel;
@@ -424,11 +418,8 @@ public:
      * @tparam m The dimension of the measurement vector (can be set to Dynamic).
      * @param time The time associated with the measurement.
      * @param measurement The actual measurement vector.
-     * @param measurement_model The function that maps the state to the tuple
-     * (measurement, measurement Jacobian).
      * @param measurement_covariance The covariance matrix of the measurement noise.
-     * @param measurement_angle_indices The indices of angles in the measurement vec.
-     * @return reference to the added (or joined) TimeStep in the TimeLine.
+     * @return reference to the added TimeStep in the TimeLine.
      */
     template<typename MeasurementModel>
     const TimeStep<MeasurementModel>& addMeasurement(
@@ -450,7 +441,7 @@ public:
      *  @param time The time at which to get the state and covariance.
      *  @return A tuple containing the state vector and covariance matrix at time t.
      */
-    tuple<State, StateCovariance> getState(Real time) {
+    std::tuple<State, StateCovariance> getState(Real time) {
         // this call might not add anything and just find an existing TimeStep
         auto step = addNoMeasurement(time);
         return {step.state, step.state_covariance};
@@ -462,7 +453,7 @@ public:
      *
      *  @return A tuple containing the last state vector and covariance matrix.
      */
-    tuple<State, StateCovariance> getLastState() {
+    std::tuple<State, StateCovariance> getLastState() {
         if(timeline.empty()) {
             return {initial_state, initial_state_covariance};
         }
@@ -485,4 +476,4 @@ private:
     }
 };
 
-} // namespace EKFNamespace
+} // namespace ekf
