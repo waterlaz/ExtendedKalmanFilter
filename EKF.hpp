@@ -28,8 +28,7 @@ namespace ekf {
  */
 template<typename Real>
 Real normalInverseCDF(Real p) {
-    // Peter J. Acklam's approximation
-    if (p <= 0 || p >= 1) throw std::domain_error("p must be in (0,1)");
+    assert(p > 0 && p < 1);
 
     static const Real a[] = {
         -3.969683028665376e+01,  2.209460984245205e+02,
@@ -155,6 +154,26 @@ public:
     }
 };
 
+template <typename R, int n>
+class GenericProcessModel {
+public:
+    using Real = R;
+    using State = Eigen::Matrix<Real, n, 1>;
+    using StateCovariance = Eigen::Matrix<Real, n, n>;
+    using StateJacobian = Eigen::Matrix<Real, n, n>;
+    /**  @brief The function that maps the previous state and time duration to
+     * the tuple (predicted state, Jacobian, state transition noise covariance).
+     *
+     *  This function should take a state vector and passed time as input
+     *  and return a triplet containing:
+     *  - The predicted new state vector after the time dt.
+     *  - The state Jacobian matrix, how the next state depends on the previous state.
+     *  - The covariance matrix of the process noise for the state transition.
+     *  In many cases, the covariance matrix can be Q*dt for some constant Q.
+     */
+    static std::tuple<State, StateJacobian, StateCovariance> predict(
+        const State& state, Real dt) = delete;
+};
 
 /*! A discrete point in time of a Kalman filter.
  *  Most of the filter math is hidden within this class in the update() method.
@@ -176,6 +195,13 @@ public:
     using Measurement = typename MeasurementModel::Measurement;
     using MeasurementJacobian = typename MeasurementModel::MeasurementJacobian;
     using MeasurementCovariance = typename MeasurementModel::MeasurementCovariance;
+    //using typename MeasurementModel::Real;
+    //using typename MeasurementModel::State;
+    //using typename MeasurementModel::StateCovariance;
+    //using typename MeasurementModel::StateTransition;
+    //using typename MeasurementModel::Measurement;
+    //using typename MeasurementModel::MeasurementJacobian;
+    //using typename MeasurementModel::MeasurementCovariance;
     using KalmanGain = Eigen::Matrix<Real, State::RowsAtCompileTime,
                                     Measurement::RowsAtCompileTime>;
     /// @brief The state vector at the time of the observation (x).
@@ -321,6 +347,7 @@ private:
         return m.template selfadjointView<Eigen::Lower>();
     }
     Real getMahalanobisThreshold() {
+        // a static variable to cache the computed threshold value.
         static const Real value = computeMahalanobis();
         return value;
     }
@@ -334,12 +361,53 @@ private:
     }
 };
 
-template <typename Real, int n, typename... MeasurementModels>
+
+template <typename Key, typename Value>
+class TimeLine {
+public:
+    size_t head = 0;
+    size_t tail = 0;
+    bool push(const Key& key, const Value& value) {
+        if(head==tail) {
+            data[tail] = {key, value};
+            tail = next(tail);
+            return true;
+        }
+        size_t i = tail;
+        while(i!=head) {
+            size_t j = prev(i);
+            if(data[j].first <= key) {
+                break;
+            }
+            data[i] = std::move(data[j]);
+            i = j;
+        }
+        data[i] = {key, value};
+    }
+    Value& front() {
+        return data[head].second;
+    }
+    Value& back() {
+        return data[prev(tail)].second;
+    }
+private:
+    std::vector<std::pair<Key, Value>> data;
+    size_t prev(size_t index) const {
+        return (index + data.size() - 1) % data.size();
+    }
+    size_t next(size_t index) const {
+        return (index + 1) % data.size();
+    }
+};
+
+template <typename ProcessModel, typename... MeasurementModels>
 class EKF {
 public:
-    using State = Eigen::Matrix<Real, n, 1>;
-    using StateCovariance = Eigen::Matrix<Real, n, n>;
-    using StateJacobian = Eigen::Matrix<Real, n, n>;
+    static constexpr int n = ProcessModel::State::RowsAtCompileTime;
+    using Real = typename ProcessModel::Real;
+    using State = typename ProcessModel::State;
+    using StateCovariance = typename ProcessModel::StateCovariance;
+    using StateJacobian = typename ProcessModel::StateJacobian;
     using TimeStepVariant = std::variant<TimeStep<NoMeasurementModel<Real, n>>,
                                          TimeStep<MeasurementModels>...>;
     //using MeasurementModel = typename TimeStep<Real, n>::MeasurementModel;
@@ -357,18 +425,6 @@ public:
     void reset() {
         timeline.clear();
     }
-    /**  @brief The function that maps the previous state and time duration to
-     * the tuple (predicted state, Jacobian, state transition noise covariance).
-     *
-     *  This function should take a state vector and passed time as input
-     *  and return a triplet containing:
-     *  - The predicted new state vector after the time dt.
-     *  - The state Jacobian matrix, how the next state depends on the previous state.
-     *  - The covariance matrix of the process noise for the state transition.
-     *  In many cases, the covariance matrix can be Q*dt for some constant Q.
-     */
-    virtual std::tuple<State, StateJacobian, StateCovariance> predict(
-        const State& state, Real dt) = 0;
     /** @brief Adds a new TimeStep and performs the EKF prediction and update steps.
      *
      *  The EKF prediction and update steps will be performed for the new
@@ -394,7 +450,7 @@ public:
                 Real dt = cur->first - prev->first;
                 std::visit([&](auto&& step) {
                     auto [x_prev, P_prev] = getStateAndCovariance(prev->second);
-                    auto [x_pred, F, Q] = predict(x_prev, dt);
+                    auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
                     step.update(x_pred, P_prev, F, Q); }, cur->second);
             }
         }
