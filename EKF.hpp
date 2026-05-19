@@ -518,6 +518,10 @@ public:
         }
         data[i] = value;
         tail = next(tail);
+        if(tail == head) {
+            // the buffer is full, we need to overwrite the oldest entry
+            head = next(head);
+        }
         return i;
     }
     /// @brief Returns the first element in the timeline.
