@@ -264,7 +264,7 @@ public:
 
         StateCovariance P_pred = F * sym(P_prev) * F.transpose() + Q;
         state = predicted_state;
-        state_covariance = P_pred;
+        state_covariance = sym(P_pred);
     }
 private:
     // a usefull optimisation to treat symmetric matrices in computations
@@ -352,7 +352,8 @@ public:
                 // try to recover and fix the covariance matrix
                 filter_state.state_covariance = 0.5*(P_pred + P_pred.transpose());
                 Real min_diag = filter_state.state_covariance.diagonal().minCoeff();
-                filter_state.state_covariance += 2.0*std::abs(min_diag) * I;
+                Real fix = 1e-9 * P_pred.trace() + std::abs(min_diag);
+                filter_state.state_covariance += fix * I;
                 return;
             }
             Real threshold = getMahalanobisThreshold();
