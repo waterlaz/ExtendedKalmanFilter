@@ -106,7 +106,18 @@ bool isMatrixPositiveDefinite(const Eigen::Matrix<Real, n, n>& A) {
         return ldlt.info() == Eigen::Success && ldlt.isPositive();
     }
 }
-
+/**
+ * @brief Base class for measurement models used by the Extended Kalman Filter.
+ *
+ * A measurement model defines how the system state is mapped to an expected
+ * measurement and its Jacobian. Derived classes are expected to provide a
+ * static `measure()` function and may optionally override
+ * `measurementAngleIndices()` and `gatingProbability`.
+ *
+ * @tparam R Floating-point type (for example `float` or `double`).
+ * @tparam n Dimension of the state vector.
+ * @tparam m Dimension of the measurement vector.
+ */
 template <typename R, int n, int m>
 class GenericMeasurementModel {
 public:
@@ -137,11 +148,22 @@ public:
     static std::array<size_t, 0> measurementAngleIndices() {
         return {};
     }
-    /// @brief The gating probability for outlier rejection based on the
-    /// Mahalanobis distance.
+    /** @brief Probability used to compute the Mahalanobis distance gating threshold.
+     *
+     * Measurements whose innovation Mahalanobis distance exceeds the threshold
+     * corresponding to this probability are treated as outliers and ignored.
+     */
     static constexpr Real gatingProbability = 0.99;
 };
 
+/**
+ * @brief Dummy measurement model representing the absence of measurement.
+ *
+ * This model has zero measurement dimension and is used for prediction-only steps
+ *
+ * @tparam Real Floating-point type.
+ * @tparam n Dimension of the state vector.
+ */
 template <typename Real, int n>
 class NoMeasurementModel : public GenericMeasurementModel<Real, n, 0> {
 public:
@@ -152,6 +174,16 @@ public:
     }
 };
 
+/**
+ * @brief Base class for process models used by the Extended Kalman Filter.
+ *
+ * A process model predicts the next system state given the current state and
+ * elapsed time, and provides the associated state-transition Jacobian and
+ * process noise covariance.
+ *
+ * @tparam R Floating-point type (for example `float` or `double`).
+ * @tparam n Dimension of the state vector.
+ */
 template <typename R, int n>
 class GenericProcessModel {
 public:
@@ -173,6 +205,16 @@ public:
         const State& state, Real dt) = delete;
 };
 
+
+/**
+ * @brief Stores the current state estimate and its covariance.
+ *
+ * This class encapsulates the estimated state vector and corresponding
+ * covariance matrix and provides functionality for the prediction step.
+ *
+ * @tparam Real Floating-point type.
+ * @tparam n Dimension of the state vector.
+ */
 template <typename Real, int n>
 class FilterState {
 public:
@@ -201,6 +243,14 @@ public:
                     isMatrixPositiveDefinite(state_covariance))) &&
                "If the state is defined, the covariance must also be defined");
     }
+    /**
+     * @brief Performs the covariance prediction step.
+     *
+     * @param predicted_state Predicted state vector.
+     * @param previous_state_covariance Covariance of the previous state estimate.
+     * @param transition_jacobian State-transition Jacobian.
+     * @param process_noise_covariance Process noise covariance matrix.
+     */
     void predict(const State& predicted_state,
                  const StateCovariance& previous_state_covariance,
                  const StateTransition& transition_jacobian,
@@ -232,16 +282,15 @@ private:
     }
 };
 
-/*! A discrete point in time of a Kalman filter.
- *  Most of the filter math is hidden within this class in the update() method.
- *  Each TimeStep can represent either a prediction step (with no measurement)
- *  or an update step (with a measurement).
- *  The EKF class manages a timeline of these TimeSteps,
- *  and performs the necessary prediction and update steps.
+/**
+ * @brief Represents a single measurement update in the filter timeline.
  *
- *  The TimeStep class is designed to be flexible and can work with
- *  any measurement model that defines the necessary types and functions.
- * */
+ * Stores a measurement vector and its covariance and performs the Extended
+ * Kalman Filter update step.
+ *
+ * @tparam MeasurementModel Measurement model type used to interpret the
+ *         measurement.
+ */
 template <typename MeasurementModel>
 class MeasurementStep {
 public:
@@ -254,16 +303,19 @@ public:
     using MeasurementCovariance = typename MeasurementModel::MeasurementCovariance;
     using KalmanGain = Eigen::Matrix<Real, State::RowsAtCompileTime,
                                     Measurement::RowsAtCompileTime>;
-    /// @brief The time associated with the measurement.
-    Real time;
     /// @brief The measurement vector associated with the observation (z).
     Measurement measurement;
     ///  @brief The covariance matrix of the measurement noise (R).
     MeasurementCovariance measurement_covariance;
     /**
-     * FIXME: write comment and check if this is correct?
+     * @brief Constructs an empty measurement step.
+     *
+     * The measurement vector and covariance matrix are default-constructed.
+     * For zero-dimensional measurements (used by NoMeasurementModel), this
+     * represents a prediction-only step.
      */
     MeasurementStep() {}
+
     /**
      * @brief Constructs an observation with a given measurement,
      * measurement function and measurement noise covariance.
@@ -359,6 +411,14 @@ private:
     static inline auto sym(const Eigen::MatrixBase<Derived>& m) {
         return m.template selfadjointView<Eigen::Lower>();
     }
+    /**
+     * @brief Returns the cached Mahalanobis-distance gating threshold.
+     *
+     * The threshold is computed once per template instantiation using
+     * `computeMahalanobis()`.
+     *
+     * @return Squared Mahalanobis-distance threshold.
+     */
     Real getMahalanobisThreshold() {
         // a static variable to cache the computed threshold value.
         static const Real value = computeMahalanobis();
@@ -374,6 +434,19 @@ private:
     }
 };
 
+/**
+ * @brief Timeline entry containing time, state, and an optional measurement.
+ *
+ * Each object stores:
+ * - The timestamp.
+ * - The filter state estimate at that timestamp.
+ * - A variant holding either a prediction-only step or one of the supported
+ *   measurement step types.
+ *
+ * @tparam Real Floating-point type.
+ * @tparam n Dimension of the state vector.
+ * @tparam MeasurementModels Supported measurement model types.
+ */
 template <typename Real, int n, typename... MeasurementModels>
 class TimeStepVariant {
 public:
@@ -381,19 +454,41 @@ public:
     FilterState<Real, n> state;
     std::variant<MeasurementStep<NoMeasurementModel<Real, n>>,
                  MeasurementStep<MeasurementModels>...> measurement_step;
+    /**
+     * @brief Compares two timeline entries by timestamp.
+     *
+     * @param other Entry to compare against.
+     * @return `true` if this entry occurs no later than `other`.
+     */
     bool operator<=(const TimeStepVariant<Real, n, MeasurementModels...>& other) const {
         return time<=other.time;
     }
+    /** @brief Constructs an empty timeline entry. */
     TimeStepVariant() {}
+    /**
+     * @brief Constructs a prediction-only timeline entry.
+     * @param time Timestamp associated with the entry.
+     */
     TimeStepVariant(Real time) :
         time{time},
         measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
     {}
+    /**
+     * @brief Constructs a timeline entry with an explicit filter state.
+     * @param time Timestamp associated with the entry.
+     * @param state Initial filter state.
+     */
     TimeStepVariant(Real time, const FilterState<Real, n>& state) :
         time{time},
         state{state},
         measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
     {}
+    /**
+     * @brief Constructs a timeline entry containing a measurement step.
+     * @tparam MeasurementModel Measurement model type.
+     * @param time Timestamp associated with the measurement.
+     * @param measurement_step Measurement step object.
+     */
     template<typename MeasurementModel>
     TimeStepVariant(Real time,
                     const MeasurementStep<MeasurementModel>& measurement_step) :
@@ -402,12 +497,26 @@ public:
     {}
 };
 
+/**
+ * @brief Fixed size circular buffer timeline that stores time-ordered filter steps.
+ *
+ * New entries are inserted in sorted order by timestamp.
+ * Existing entries after the insertion point are shifted as needed.
+ *
+ * @tparam TimeStep Type of entries stored in the timeline.
+ */
 template <typename TimeStep>
 class TimeLine {
 public:
+    /// @brief Head index of the circular buffer.
     size_t head = 0;
+    /// @brief Tail index of the circular buffer.
     size_t tail = 0;
-    // returns index of the inserted element
+    /**
+     * @brief Inserts a time step while preserving timeline order.
+     * @param value Timeline value to insert.
+     * @return Index where the value was inserted.
+     */
     int insert(const TimeStep& value) {
         if(empty()) {
             data[tail] = value;
@@ -427,25 +536,37 @@ public:
         tail = next(tail);
         return i;
     }
+    /// @brief Returns the first element in the timeline.
     TimeStep& front() {
         return data[head];
     }
+    /// @brief Returns the last element in the timeline.
     TimeStep& back() {
         return data[prev(tail)];
     }
+    /** @brief Clears the timeline by resetting head and tail indices.
+     *  The actual data in the vector is not modified, but will be overwritten
+     *  by future insertions.
+     */
     void clear() {
-        data.clear();
+        head = 0;
+        tail = 0;
     }
+    /// @brief Checks whether the timeline has no entries.
     bool empty() const {
-        return head==tail;
+        return head == tail;
     }
+    /// @brief Constructs a timeline with fixed circular capacity.
     TimeLine(size_t size=0) : data(size) {}
+    /// @brief Returns a timeline element by internal index.
     TimeStep& operator[](size_t i) {
         return data[i];
     }
+    /// @brief Returns previous circular index.
     size_t prev(size_t index) const {
         return (index + data.size() - 1) % data.size();
     }
+    /// @brief Returns next circular index.
     size_t next(size_t index) const {
         return (index + 1) % data.size();
     }
@@ -453,6 +574,17 @@ private:
     std::vector<TimeStep> data;
 };
 
+
+/**
+ * @brief Extended Kalman Filter with support for multiple measurement models.
+ *
+ * The filter maintains a time-ordered history of prediction and measurement
+ * steps. When a new measurement is inserted at an arbitrary time, all
+ * subsequent states are recomputed.
+ *
+ * @tparam ProcessModel Dynamic model used for state prediction.
+ * @tparam MeasurementModels Supported measurement model types.
+ */
 template <typename ProcessModel, typename... MeasurementModels>
 class EKF {
 public:
@@ -462,7 +594,6 @@ public:
     using StateCovariance = typename ProcessModel::StateCovariance;
     using StateJacobian = typename ProcessModel::StateJacobian;
     using TimeStep = TimeStepVariant<Real, n, MeasurementModels...>;
-    //using MeasurementModel = typename TimeStep<Real, n>::MeasurementModel;
     /// @brief stores TimeSteps sorted by time.
     TimeLine<TimeStep> timeline;
     /// @brief the initial state vector for the EKF when there are no previous steps.
@@ -473,10 +604,8 @@ public:
     void reset() {
         timeline.clear();
     }
-    /** @brief Adds a new TimeStep and performs the EKF prediction and update steps.
+    /** @brief Inserts a new measurement step and updates all subsequent steps.
      *
-     *  The EKF prediction and update steps will be performed for the new
-     *  TimeStep and all subsequent TimeSteps in the TimeLine.
      *  @param time The time associated with the new TimeStep to add to the TimeLine.
      *  @param timestep The TimeStep to add to the TimeLine and perform EKF steps for.
      *  @return reference to the added TimeStep in the TimeLine.
@@ -565,18 +694,12 @@ public:
         auto& last = timeline.back();
         return {last.state.state, last.state.state_covariance};
     }
+    /// @brief Returns configured timeline capacity.
     size_t getMaxHistoryCount() const {
         return timeline.size();
     }
+    /// @brief Constructs EKF with default timeline history capacity.
     EKF() : timeline(1000) {}
-private:
-    /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
-    Real totalTime() const {
-        if(timeline.empty()) {
-            return Real(0);
-        }
-        return timeline.rbegin()->time - timeline.begin()->time;
-    }
 };
 
 } // namespace ekf
