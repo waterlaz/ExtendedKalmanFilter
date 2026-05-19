@@ -490,7 +490,7 @@ public:
  * @tparam TimeStep Type of entries stored in the timeline.
  */
 template <typename TimeStep>
-class TimeLine {
+class Timeline {
 public:
     /// @brief Head index of the circular buffer.
     size_t head = 0;
@@ -545,7 +545,7 @@ public:
         return head == tail;
     }
     /// @brief Constructs a timeline with fixed circular capacity.
-    TimeLine(size_t size=0) : data(size) {}
+    Timeline(size_t size=0) : data(size) {}
     /// @brief Returns a timeline element by internal index.
     TimeStep& operator[](size_t i) {
         return data[i];
@@ -583,7 +583,7 @@ public:
     using StateJacobian = typename ProcessModel::StateJacobian;
     using TimeStep = TimeStepVariant<Real, n, MeasurementModels...>;
     /// @brief stores TimeSteps sorted by time.
-    TimeLine<TimeStep> timeline;
+    Timeline<TimeStep> timeline;
     /// @brief the initial state vector for the EKF when there are no previous steps.
     State initial_state;
     /// @brief the initial state covariance matrix for the EKF.
