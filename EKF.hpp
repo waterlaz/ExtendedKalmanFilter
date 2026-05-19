@@ -6,7 +6,6 @@
 #include <array>
 #include <cassert>
 #include <cmath>
-#include <map>
 #include <stdexcept>
 #include <tuple>
 #include <variant>
@@ -114,7 +113,6 @@ public:
     using Real = R;
     using State = Eigen::Matrix<Real, n, 1>;
     using StateCovariance = Eigen::Matrix<Real, n, n>;
-    using StateTransition = Eigen::Matrix<Real, n, n>;
     using Measurement = Eigen::Matrix<Real, m, 1>;
     using MeasurementJacobian = Eigen::Matrix<Real, m, n>;
     using MeasurementCovariance = Eigen::Matrix<Real, m, m>;
@@ -175,6 +173,65 @@ public:
         const State& state, Real dt) = delete;
 };
 
+template <typename Real, int n>
+class FilterState {
+public:
+    using State = Eigen::Matrix<Real, n, 1>;
+    using StateCovariance = Eigen::Matrix<Real, n, n>;
+    using StateTransition = Eigen::Matrix<Real, n, n>;
+    /// @brief Indicates whether the filter state has a valid estimated state and covariance.
+    bool hasEstimatedState = false;
+    /// @brief The state vector at the time of the observation (x).
+    State state;
+    /// @brief The covariance matrix of the state estimate (P).
+    StateCovariance state_covariance;
+    /**
+     * @brief Constructs a filter state with an optional state.
+     * @param state The state vector (x).
+     * @param state_covariance The covariance matrix of the state estimate (P).
+     */
+    FilterState(const State& state = undefined_state(),
+             const StateCovariance& state_covariance = undefined_state_covariance())
+        : state{state},
+          state_covariance{state_covariance}
+    {
+        hasEstimatedState = !state.hasNaN();
+        assert((!hasEstimatedState || (
+                    !state_covariance.hasNaN() &&
+                    isMatrixPositiveDefinite(state_covariance))) &&
+               "If the state is defined, the covariance must also be defined");
+    }
+    void predict(const State& predicted_state,
+                 const StateCovariance& previous_state_covariance,
+                 const StateTransition& transition_jacobian,
+                 const StateCovariance& process_noise_covariance)
+    {
+        const auto& F = transition_jacobian;
+        const auto& Q = process_noise_covariance;
+        const auto& P_prev = previous_state_covariance;
+
+        assert(isMatrixPositiveDefinite(Q));
+        assert(isMatrixPositiveDefinite(P_prev));
+
+        StateCovariance P_pred = F * sym(P_prev) * F.transpose() + Q;
+        state = predicted_state;
+        state_covariance = P_pred;
+    }
+private:
+    static StateCovariance undefined_state_covariance() {
+        return StateCovariance::Constant(std::numeric_limits<Real>::quiet_NaN());
+    }
+    static State undefined_state() {
+        return State::Constant(std::numeric_limits<Real>::quiet_NaN());
+    }
+    // a usefull optimisation to treat symmetric matrices in computations
+    // also improves numerical stability.
+    template <typename Derived>
+    static inline auto sym(const Eigen::MatrixBase<Derived>& m) {
+        return m.template selfadjointView<Eigen::Lower>();
+    }
+};
+
 /*! A discrete point in time of a Kalman filter.
  *  Most of the filter math is hidden within this class in the update() method.
  *  Each TimeStep can represent either a prediction step (with no measurement)
@@ -186,50 +243,35 @@ public:
  *  any measurement model that defines the necessary types and functions.
  * */
 template <typename MeasurementModel>
-class TimeStep {
+class MeasurementStep {
 public:
     using Real = typename MeasurementModel::Real;
+    static constexpr int n = MeasurementModel::State::RowsAtCompileTime;
     using State = typename MeasurementModel::State;
     using StateCovariance = typename MeasurementModel::StateCovariance;
-    using StateTransition = typename MeasurementModel::StateTransition;
     using Measurement = typename MeasurementModel::Measurement;
     using MeasurementJacobian = typename MeasurementModel::MeasurementJacobian;
     using MeasurementCovariance = typename MeasurementModel::MeasurementCovariance;
-    //using typename MeasurementModel::Real;
-    //using typename MeasurementModel::State;
-    //using typename MeasurementModel::StateCovariance;
-    //using typename MeasurementModel::StateTransition;
-    //using typename MeasurementModel::Measurement;
-    //using typename MeasurementModel::MeasurementJacobian;
-    //using typename MeasurementModel::MeasurementCovariance;
     using KalmanGain = Eigen::Matrix<Real, State::RowsAtCompileTime,
                                     Measurement::RowsAtCompileTime>;
-    /// @brief The state vector at the time of the observation (x).
-    State state;
-    /// @brief The covariance matrix of the state estimate (P).
-    StateCovariance state_covariance;
+    /// @brief The time associated with the measurement.
+    Real time;
     /// @brief The measurement vector associated with the observation (z).
     Measurement measurement;
     ///  @brief The covariance matrix of the measurement noise (R).
     MeasurementCovariance measurement_covariance;
     /**
-     * @brief Constructs an observation with an optional state and no measurement.
-     * @param time The time associated with the observation.
+     * FIXME: write comment and check if this is correct?
      */
-    TimeStep(const State& state = undefined_state(),
-             const StateCovariance& state_covariance = undefined_state_covariance())
-        : state{state},
-          state_covariance{state_covariance},
-          measurement{no_measurement()},
-          measurement_covariance{no_measurement_covariance()} {}
+    MeasurementStep() {}
     /**
      * @brief Constructs an observation with a given measurement,
      * measurement function and measurement noise covariance.
      * @param measurement The actual measurement.
      * @param measurement_covariance The covariance matrix of the measurement noise.
      */
-    TimeStep(const Measurement& measurement,
-             const MeasurementCovariance& measurement_covariance)
+    MeasurementStep(const Measurement& measurement,
+                    const MeasurementCovariance& measurement_covariance)
         : measurement{measurement},
           measurement_covariance{measurement_covariance}
     {
@@ -238,31 +280,17 @@ public:
     }
 
     /**
-     * @brief The EKF prediction and update steps based on the previous TimeStep.
-     * @param previous The previous TimeStep containing the prior state and covariance.
-     * @param process_noise_covariance The covariance matrix of the process noise.
-     * @param transition_jacobian The Jacobian matrix of the state transition function.
-     * @param predicted_state The predicted state vector based on the state transition function.
+     * @brief Performs the EKF update step for this measurement.
+     * @param filter_state Contains the predicted state and covariance to update.
      */
-    void update(const State& predicted_state,
-                const StateCovariance& previous_state_covariance,
-                const StateTransition& transition_jacobian,
-                const StateCovariance& process_noise_covariance)
-    {
+    void update(FilterState<Real, n>& filter_state) {
         StateCovariance I = StateCovariance::Identity();
-        const auto& F = transition_jacobian;
-        const auto& Q = process_noise_covariance;
-        const auto& P_prev = previous_state_covariance;
         const auto& R = measurement_covariance;
-        const auto& x_pred = predicted_state;
+        const auto& x_pred = filter_state.state;
+        const auto& P_pred = filter_state.state_covariance;
 
-        assert(isMatrixPositiveDefinite(Q));
         assert(isMatrixPositiveDefinite(R));
-        assert(isMatrixPositiveDefinite(P_prev));
 
-        StateCovariance P_pred = F * sym(P_prev) * F.transpose() + Q;
-        state = x_pred;
-        state_covariance = P_pred;
         if constexpr (Measurement::RowsAtCompileTime != 0) {
         if(hasMeasurement()) {
             auto [z_pred, H] = MeasurementModel::measure(x_pred);
@@ -277,9 +305,9 @@ public:
             Eigen::LDLT<MeasurementCovariance> ldlt(S);
             if(ldlt.info() != Eigen::Success || !ldlt.isPositive()) {
                 // try to recover and fix the covariance matrix
-                state_covariance = 0.5*(P_pred + P_pred.transpose());
-                Real min_diag = state_covariance.diagonal().minCoeff();
-                state_covariance += 2.0*std::abs(min_diag) * I;
+                filter_state.state_covariance = 0.5*(P_pred + P_pred.transpose());
+                Real min_diag = filter_state.state_covariance.diagonal().minCoeff();
+                filter_state.state_covariance += 2.0*std::abs(min_diag) * I;
                 return;
             }
             Real threshold = getMahalanobisThreshold();
@@ -295,11 +323,11 @@ public:
             //Mat K = P_pred * H.transpose() * S.inverse(); but stable:
             KalmanGain K = ldlt.solve(H * P_pred).transpose();
 
-            state = x_pred + K * y;
+            filter_state.state = x_pred + K * y;
             // state_covariance = (I - K * H) * P_pred; but in Joseph form:
-            state_covariance = (I - K * H) * sym(P_pred) * (I - K * H).transpose()
+            filter_state.state_covariance = (I - K * H) * sym(P_pred) * (I - K * H).transpose()
                              + K * R * K.transpose();
-            state_covariance = sym(state_covariance);
+            filter_state.state_covariance = sym(filter_state.state_covariance);
         }
         }
     }
@@ -313,24 +341,9 @@ public:
      *  @return true if the measurement vector is non-empty, false otherwise
      */
     bool hasMeasurement() const {
-        return measurement.size() > 0 && measurement_covariance.size() > 0;
-    }
-    /** @brief Checks if the TimeStep has an estimated state.
-     *
-     *  A TimeStep has an estimated state if its state vector and covariance matrix
-     *  do not contain NaN values. A TimeStep without an estimated state
-     *  cannot be used as a previous TimeStep for the update() method.
-     */
-    bool hasEstimatedState() const {
-        return !state.hasNaN() && !state_covariance.hasNaN();
+        return measurement.size();
     }
 private:
-    static StateCovariance undefined_state_covariance() {
-        return StateCovariance::Constant(std::numeric_limits<Real>::quiet_NaN());
-    }
-    static State undefined_state() {
-        return State::Constant(std::numeric_limits<Real>::quiet_NaN());
-    }
     static Measurement no_measurement() {
         return Measurement();
     }
@@ -361,43 +374,83 @@ private:
     }
 };
 
+template <typename Real, int n, typename... MeasurementModels>
+class TimeStepVariant {
+public:
+    Real time;
+    FilterState<Real, n> state;
+    std::variant<MeasurementStep<NoMeasurementModel<Real, n>>,
+                 MeasurementStep<MeasurementModels>...> measurement_step;
+    bool operator<=(const TimeStepVariant<Real, n, MeasurementModels...>& other) const {
+        return time<=other.time;
+    }
+    TimeStepVariant() {}
+    TimeStepVariant(Real time) :
+        time{time},
+        measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
+    {}
+    TimeStepVariant(Real time, const FilterState<Real, n>& state) :
+        time{time},
+        state{state},
+        measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
+    {}
+    template<typename MeasurementModel>
+    TimeStepVariant(Real time,
+                    const MeasurementStep<MeasurementModel>& measurement_step) :
+        time{time},
+        measurement_step{measurement_step}
+    {}
+};
 
-template <typename Key, typename Value>
+template <typename TimeStep>
 class TimeLine {
 public:
     size_t head = 0;
     size_t tail = 0;
-    bool push(const Key& key, const Value& value) {
-        if(head==tail) {
-            data[tail] = {key, value};
+    // returns index of the inserted element
+    int insert(const TimeStep& value) {
+        if(empty()) {
+            data[tail] = value;
             tail = next(tail);
-            return true;
+            return prev(tail);
         }
         size_t i = tail;
         while(i!=head) {
             size_t j = prev(i);
-            if(data[j].first <= key) {
+            if(data[j] <= value) {
                 break;
             }
             data[i] = std::move(data[j]);
             i = j;
         }
-        data[i] = {key, value};
+        data[i] = value;
+        tail = next(tail);
+        return i;
     }
-    Value& front() {
-        return data[head].second;
+    TimeStep& front() {
+        return data[head];
     }
-    Value& back() {
-        return data[prev(tail)].second;
+    TimeStep& back() {
+        return data[prev(tail)];
     }
-private:
-    std::vector<std::pair<Key, Value>> data;
+    void clear() {
+        data.clear();
+    }
+    bool empty() const {
+        return head==tail;
+    }
+    TimeLine(size_t size=0) : data(size) {}
+    TimeStep& operator[](size_t i) {
+        return data[i];
+    }
     size_t prev(size_t index) const {
         return (index + data.size() - 1) % data.size();
     }
     size_t next(size_t index) const {
         return (index + 1) % data.size();
     }
+private:
+    std::vector<TimeStep> data;
 };
 
 template <typename ProcessModel, typename... MeasurementModels>
@@ -408,15 +461,10 @@ public:
     using State = typename ProcessModel::State;
     using StateCovariance = typename ProcessModel::StateCovariance;
     using StateJacobian = typename ProcessModel::StateJacobian;
-    using TimeStepVariant = std::variant<TimeStep<NoMeasurementModel<Real, n>>,
-                                         TimeStep<MeasurementModels>...>;
+    using TimeStep = TimeStepVariant<Real, n, MeasurementModels...>;
     //using MeasurementModel = typename TimeStep<Real, n>::MeasurementModel;
-    /// @brief maximum number of TimeSteps to keep in the TimeLine (or 0 to ingore).
-    size_t max_history_count = 1000;
-    /// @brief maximum period of time to keep in the TimeLine (or negative to ignore).
-    Real max_history_time = -1;
     /// @brief stores TimeSteps sorted by time.
-    std::multimap<Real, TimeStepVariant> timeline;
+    TimeLine<TimeStep> timeline;
     /// @brief the initial state vector for the EKF when there are no previous steps.
     State initial_state;
     /// @brief the initial state covariance matrix for the EKF.
@@ -434,40 +482,41 @@ public:
      *  @return reference to the added TimeStep in the TimeLine.
      */
     template<typename MeasurementModel>
-    const TimeStep<MeasurementModel>& addTimeStep(
+    const TimeStep& addMeasurementStep(
         Real time,
-        const TimeStep<MeasurementModel>& timestep)
+        const MeasurementStep<MeasurementModel>& measurement_step)
     {
         if(timeline.empty()) {
-            timeline.insert({time,
-                TimeStep<NoMeasurementModel<Real, n>>(initial_state,
-                                                      initial_state_covariance)});
+            size_t i = timeline.insert(TimeStep(
+                time,
+                FilterState<Real, n>(initial_state, initial_state_covariance)));
         }
-        auto res = timeline.insert({time, timestep});
-        for(auto cur = res; cur != timeline.end(); cur++) {
-            if(cur != timeline.begin()) {
-                auto prev = std::prev(cur);
-                Real dt = cur->first - prev->first;
+        if(timeline.front().time > time) {
+            return timeline.front();
+        }
+        size_t res = timeline.insert(TimeStep(time, measurement_step));
+        res = timeline.prev(res);
+
+        for(size_t i = res; i != timeline.tail; i = timeline.next(i)) {
+            if(i != timeline.head) {
+                auto& prev = timeline[timeline.prev(i)];
+                auto& cur = timeline[i];
+                Real dt = cur.time - prev.time;
+                auto x_prev = prev.state.state;
+                auto P_prev = prev.state.state_covariance;
+                auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
+                cur.state.predict(x_pred, P_prev, F, Q);
                 std::visit([&](auto&& step) {
-                    auto [x_prev, P_prev] = getStateAndCovariance(prev->second);
-                    auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
-                    step.update(x_pred, P_prev, F, Q); }, cur->second);
+                    step.update(cur.state); }, cur.measurement_step);
             }
         }
-        // remove old timesteps if we exceed the limits
-        while( timeline.begin() != res && // explicitly forbid removing the new item
-               std::next(timeline.begin()) != res && // and the one before it
-               ((max_history_count>0 && timeline.size() > max_history_count) ||
-                (max_history_time>0 && totalTime() > max_history_time)) ) {
-            timeline.erase(timeline.begin());
-        }
-        return std::get<TimeStep<MeasurementModel>>(res->second);
+        return timeline[res];
     }
 
     /// @brief Adds a new TimeStep with no measurement at the given time and
     /// performs the EKF prediction step based on the previous TimeStep.
-    const TimeStep<NoMeasurementModel<Real, n>>& addNoMeasurement(Real time) {
-        return addTimeStep(time, TimeStep<NoMeasurementModel<Real, n>>());
+    const TimeStepVariant<Real, n, MeasurementModels...>& addNoMeasurement(Real time) {
+        return addMeasurementStep(time, MeasurementStep<NoMeasurementModel<Real, n>>());
     }
     /** @brief Adds a new general TimeStep with a measurement at the given time.
      *
@@ -478,13 +527,13 @@ public:
      * @return reference to the added TimeStep in the TimeLine.
      */
     template<typename MeasurementModel>
-    const TimeStep<MeasurementModel>& addMeasurement(
+    const TimeStepVariant<Real, n, MeasurementModels...>& addMeasurement(
         Real time,
         const typename MeasurementModel::Measurement& measurement,
         const typename MeasurementModel::MeasurementCovariance& measurement_covariance)
     {
-        return addTimeStep(time,
-            TimeStep<MeasurementModel>(measurement, measurement_covariance));
+        return addMeasurementStep(time,
+            MeasurementStep<MeasurementModel>(measurement, measurement_covariance));
     }
 
     /** @brief Gets the state and covariance at a given time.
@@ -513,23 +562,23 @@ public:
         if(timeline.empty()) {
             return {initial_state, initial_state_covariance};
         }
-        auto last = std::prev(timeline.end());
-        auto [state, cov] = getStateAndCovariance(last->second);
-        return {state, cov};
+        auto& last = timeline.back();
+        return {last.state.state, last.state.state_covariance};
     }
+    size_t getMaxHistoryCount() const {
+        return timeline.size();
+    }
+    EKF() : timeline(1000) {}
 private:
     /// @brief Returns the total time span covered by the TimeSteps in the TimeLine.
     Real totalTime() const {
         if(timeline.empty()) {
             return Real(0);
         }
-        return timeline.rbegin()->first - timeline.begin()->first;
-    }
-    std::tuple<const State&, const StateCovariance&> getStateAndCovariance(
-        const TimeStepVariant& step) {
-        return std::visit([](auto&& step) -> std::tuple<const State&, const StateCovariance&> {
-            return {step.state, step.state_covariance}; }, step);
+        return timeline.rbegin()->time - timeline.begin()->time;
     }
 };
 
 } // namespace ekf
+
+
