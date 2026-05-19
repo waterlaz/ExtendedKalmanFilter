@@ -227,20 +227,19 @@ public:
     State state;
     /// @brief The covariance matrix of the state estimate (P).
     StateCovariance state_covariance;
+    /// @brief Constructs a filter state with no state estimate.
+    FilterState() : hasEstimatedState{false} {}
     /**
-     * @brief Constructs a filter state with an optional state.
+     * @brief Constructs a filter state with a known estimated state and covariance.
      * @param state The state vector (x).
      * @param state_covariance The covariance matrix of the state estimate (P).
      */
-    FilterState(const State& state = undefined_state(),
-             const StateCovariance& state_covariance = undefined_state_covariance())
-        : state{state},
-          state_covariance{state_covariance}
+    FilterState(const State& state, const StateCovariance& state_covariance) :
+        hasEstimatedState{true},
+        state{state},
+        state_covariance{state_covariance}
     {
-        hasEstimatedState = !state.hasNaN();
-        assert((!hasEstimatedState || (
-                    !state_covariance.hasNaN() &&
-                    isMatrixPositiveDefinite(state_covariance))) &&
+        assert(isMatrixPositiveDefinite(state_covariance) &&
                "If the state is defined, the covariance must also be defined");
     }
     /**
@@ -268,12 +267,6 @@ public:
         state_covariance = P_pred;
     }
 private:
-    static StateCovariance undefined_state_covariance() {
-        return StateCovariance::Constant(std::numeric_limits<Real>::quiet_NaN());
-    }
-    static State undefined_state() {
-        return State::Constant(std::numeric_limits<Real>::quiet_NaN());
-    }
     // a usefull optimisation to treat symmetric matrices in computations
     // also improves numerical stability.
     template <typename Derived>
@@ -393,18 +386,9 @@ public:
      *  @return true if the measurement vector is non-empty, false otherwise
      */
     bool hasMeasurement() const {
-        return measurement.size();
+        return measurement.size() > 0;
     }
 private:
-    static Measurement no_measurement() {
-        return Measurement();
-    }
-    static MeasurementCovariance no_measurement_covariance() {
-        return MeasurementCovariance();
-    }
-    static MeasurementJacobian no_measurement_jacobian() {
-        return MeasurementJacobian();
-    }
     // a usefull optimisation to treat symmetric matrices in computations
     // also improves numerical stability.
     template <typename Derived>
@@ -699,7 +683,7 @@ public:
         return timeline.size();
     }
     /// @brief Constructs EKF with default timeline history capacity.
-    EKF() : timeline(1000) {}
+    EKF() : timeline(10) {}
 };
 
 } // namespace ekf
