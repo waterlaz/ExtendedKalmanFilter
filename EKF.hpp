@@ -13,6 +13,47 @@
 
 namespace ekf {
 
+/**
+ * @brief Checks if a type satisfies the requirements of a measurement model for the EKF.
+ * @details This concept requires that the type M has the following:
+ * - A nested type `State` representing the state vector.
+ * - A nested type `Measurement` representing the measurement vector.
+ * - A nested type `MeasurementCovariance` representing the covariance matrix of the measurement noise.
+ * - A nested type `MeasurementJacobian` representing the Jacobian matrix of the measurement function.
+ * - A static member function `measure(const State&)` that returns a pair of the expected measurement and its Jacobian.
+ * - A static member function `measurementAngleIndices()` that returns a range of indices corresponding to angle measurements.
+ *   Angles will be normalized to the range [-pi, pi] during the update step.
+ */
+template<typename M>
+concept MeasurementModelConcept = requires(
+    typename M::State x,
+    typename M::Measurement z,
+    typename M::MeasurementCovariance R,
+    typename M::MeasurementJacobian H
+) {
+    { M::measure(x) } -> std::same_as<std::pair<typename M::Measurement, typename M::MeasurementJacobian>>;
+    { M::measurementAngleIndices() } -> std::ranges::range;
+};
+
+/**
+ * @brief Checks if a type satisfies the requirements of a process model for the EKF.
+ * @details This concept requires that the type P has the following:
+ * - A nested type `State` representing the state vector.
+ * - A nested type `StateCovariance` representing the covariance matrix of the state estimate.
+ * - A nested type `StateJacobian` representing the Jacobian matrix of the state transition function.
+ * - A static member function `predict(const State&, Real dt)` that takes previous state and passed time duration
+ *   and returns a tuple of the predicted state, state Jacobian, and process noise covariance.
+ */
+template<typename P>
+concept ProcessModelConcept = requires(
+    typename P::Real dt,
+    typename P::State x,
+    typename P::StateCovariance Q,
+    typename P::StateJacobian F
+) {
+    { P::predict(x, dt) } -> std::same_as<std::tuple<typename P::State, typename P::StateJacobian, typename P::StateCovariance>>;
+};
+
 /** @brief Computes the inverse CDF of the standard normal distribution.
  *
  *  This function uses Peter J. Acklam's approximation for the inverse CDF
@@ -284,7 +325,7 @@ private:
  * @tparam MeasurementModel Measurement model type used to interpret the
  *         measurement.
  */
-template <typename MeasurementModel>
+template <MeasurementModelConcept MeasurementModel>
 class MeasurementStep {
 public:
     using Real = typename MeasurementModel::Real;
@@ -432,7 +473,7 @@ private:
  * @tparam n Dimension of the state vector.
  * @tparam MeasurementModels Supported measurement model types.
  */
-template <typename Real, int n, typename... MeasurementModels>
+template <typename Real, int n, MeasurementModelConcept... MeasurementModels>
 class TimeStepVariant {
 public:
     Real time;
@@ -474,7 +515,7 @@ public:
      * @param time Timestamp associated with the measurement.
      * @param measurement_step Measurement step object.
      */
-    template<typename MeasurementModel>
+    template<MeasurementModelConcept MeasurementModel>
     TimeStepVariant(Real time,
                     const MeasurementStep<MeasurementModel>& measurement_step) :
         time{time},
@@ -574,7 +615,7 @@ private:
  * @tparam ProcessModel Dynamic model used for state prediction.
  * @tparam MeasurementModels Supported measurement model types.
  */
-template <typename ProcessModel, typename... MeasurementModels>
+template <ProcessModelConcept ProcessModel, MeasurementModelConcept... MeasurementModels>
 class EKF {
 public:
     static constexpr int n = ProcessModel::State::RowsAtCompileTime;
@@ -599,7 +640,7 @@ public:
      *  @param timestep The TimeStep to add to the TimeLine and perform EKF steps for.
      *  @return reference to the added TimeStep in the TimeLine.
      */
-    template<typename MeasurementModel>
+    template<MeasurementModelConcept MeasurementModel>
     const TimeStep& addMeasurementStep(
         Real time,
         const MeasurementStep<MeasurementModel>& measurement_step)
@@ -644,7 +685,7 @@ public:
      * @param measurement_covariance The covariance matrix of the measurement noise.
      * @return reference to the added TimeStep in the TimeLine.
      */
-    template<typename MeasurementModel>
+    template<MeasurementModelConcept MeasurementModel>
     const TimeStepVariant<Real, n, MeasurementModels...>& addMeasurement(
         Real time,
         const typename MeasurementModel::Measurement& measurement,
