@@ -67,7 +67,7 @@ concept ProcessModelConcept = requires(
  *  @throws std::domain_error if p is not in the range (0,1).
  */
 template<typename Real>
-Real normalInverseCDF(Real p) {
+[[nodiscard]] Real normalInverseCDF(Real p) {
     assert(p > 0 && p < 1);
 
     static const Real a[] = {
@@ -118,7 +118,7 @@ Real normalInverseCDF(Real p) {
  *  @return The normalized angle in the range [-pi, pi].
  */
 template <typename Real>
-Real normalizeAngle(Real angle) {
+[[nodiscard]] Real normalizeAngle(Real angle) {
     constexpr Real PI = Real(3.14159265358979323846);
     constexpr Real TWO_PI = Real(2) * PI;
     return angle - TWO_PI * std::floor((angle + PI) / TWO_PI);
@@ -137,7 +137,7 @@ Real normalizeAngle(Real angle) {
  *  @return true if the matrix is positive definite, false otherwise.
  */
 template <typename Real, int n>
-bool isMatrixPositiveDefinite(const Eigen::Matrix<Real, n, n>& A) {
+[[nodiscard]] bool isMatrixPositiveDefinite(const Eigen::Matrix<Real, n, n>& A) {
     if constexpr (n == 0) {
         return true; // an empty matrix is considered positive definite
     } else {
@@ -539,6 +539,8 @@ public:
     size_t head = 0;
     /// @brief Tail index of the circular buffer.
     size_t tail = 0;
+    /// @brief Number of valid entries currently stored in the timeline.
+    size_t count = 0;
     /**
      * @brief Inserts a time step while preserving timeline order.
      * @param value Timeline value to insert.
@@ -549,6 +551,7 @@ public:
         if(empty()) {
             data[tail] = value;
             tail = next(tail);
+            count++;
             return prev(tail);
         }
         size_t i = tail;
@@ -562,9 +565,11 @@ public:
         }
         data[i] = value;
         tail = next(tail);
-        if(tail == head) {
+        if(full()) {
             // the buffer is full, we need to overwrite the oldest entry
             head = next(head);
+        } else {
+            count++;
         }
         return i;
     }
@@ -585,21 +590,25 @@ public:
         tail = 0;
     }
     /// @brief Checks whether the timeline has no entries.
-    bool empty() const {
-        return head == tail;
+    [[nodiscard]] bool empty() const {
+        return count == 0;
+    }
+    /// @brief Checks whether the timeline is at full capacity.
+    [[nodiscard]] bool full() const {
+        return count == data.size();
     }
     /// @brief Constructs a timeline with fixed circular capacity.
     Timeline(size_t size=0) : data(size) {}
     /// @brief Returns a timeline element by internal index.
-    TimeStep& operator[](size_t i) {
+    [[nodiscard]] TimeStep& operator[](size_t i) {
         return data[i];
     }
     /// @brief Returns previous circular index.
-    size_t prev(size_t index) const {
+    [[nodiscard]] size_t prev(size_t index) const {
         return (index + data.size() - 1) % data.size();
     }
     /// @brief Returns next circular index.
-    size_t next(size_t index) const {
+    [[nodiscard]] size_t next(size_t index) const {
         return (index + 1) % data.size();
     }
 private:
