@@ -109,7 +109,8 @@ Real normalInverseCDF(Real p) {
 /** @brief Normalizes an angle to the range [-pi, pi].
  *
  *  This function takes an angle in radians and wraps it to the range [-pi, pi].
- *  It is useful for ensuring that angle measurements and state variables representing angles remain within a consistent range,
+ *  It is useful for ensuring that angle measurements and state variables
+ *  representing angles remain within a consistent range,
  *  which can help prevent issues with angle discontinuities in the EKF update step.
  *
  *  @tparam Real The floating point type of the angle (e.g. float, double).
@@ -269,7 +270,7 @@ public:
     /// @brief The covariance matrix of the state estimate (P).
     StateCovariance state_covariance;
     /// @brief Constructs a filter state with no state estimate.
-    FilterState() : hasEstimatedState{false} {}
+    FilterState() = default;
     /**
      * @brief Constructs a filter state with a known estimated state and covariance.
      * @param state The state vector (x).
@@ -348,7 +349,7 @@ public:
      * For zero-dimensional measurements (used by NoMeasurementModel), this
      * represents a prediction-only step.
      */
-    MeasurementStep() {}
+    MeasurementStep() = default;
 
     /**
      * @brief Constructs an observation with a given measurement,
@@ -490,7 +491,7 @@ public:
         return time<=other.time;
     }
     /** @brief Constructs an empty timeline entry. */
-    TimeStepVariant() {}
+    TimeStepVariant() = default;
     /**
      * @brief Constructs a prediction-only timeline entry.
      * @param time Timestamp associated with the entry.
@@ -543,7 +544,8 @@ public:
      * @param value Timeline value to insert.
      * @return Index where the value was inserted.
      */
-    int insert(const TimeStep& value) {
+    size_t insert(const TimeStep& value) {
+        assert(data.size() > 0 && "Timeline capacity must be greater than 0");
         if(empty()) {
             data[tail] = value;
             tail = next(tail);
