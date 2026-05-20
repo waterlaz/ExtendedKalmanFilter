@@ -539,19 +539,16 @@ public:
     size_t head = 0;
     /// @brief Tail index of the circular buffer.
     size_t tail = 0;
-    /// @brief Number of valid entries currently stored in the timeline.
-    size_t count = 0;
     /**
      * @brief Inserts a time step while preserving timeline order.
      * @param value Timeline value to insert.
      * @return Index where the value was inserted.
      */
     size_t insert(const TimeStep& value) {
-        assert(data.size() > 0 && "Timeline capacity must be greater than 0");
+        assert(data.size() > 1 && "Timeline capacity must be greater than 0");
         if(empty()) {
             data[tail] = value;
             tail = next(tail);
-            count++;
             return prev(tail);
         }
         size_t i = tail;
@@ -565,11 +562,9 @@ public:
         }
         data[i] = value;
         tail = next(tail);
-        if(full()) {
+        if(tail == head) {
             // the buffer is full, we need to overwrite the oldest entry
             head = next(head);
-        } else {
-            count++;
         }
         return i;
     }
@@ -591,14 +586,10 @@ public:
     }
     /// @brief Checks whether the timeline has no entries.
     [[nodiscard]] bool empty() const {
-        return count == 0;
-    }
-    /// @brief Checks whether the timeline is at full capacity.
-    [[nodiscard]] bool full() const {
-        return count == data.size();
+        return head == tail;
     }
     /// @brief Constructs a timeline with fixed circular capacity.
-    Timeline(size_t size=0) : data(size) {}
+    Timeline(size_t size=0) : data(size+1) {}
     /// @brief Returns a timeline element by internal index.
     [[nodiscard]] TimeStep& operator[](size_t i) {
         return data[i];
