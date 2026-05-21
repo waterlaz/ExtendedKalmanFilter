@@ -187,7 +187,7 @@ public:
      *  For example, if the state vector is [x, y, theta] and theta is an angle,
      *  then anglesIndices should be set to {2} (assuming 0-based indexing).
      */
-    static std::array<size_t, 0> measurementAngleIndices() {
+    [[nodiscard]] static std::array<size_t, 0> measurementAngleIndices() {
         return {};
     }
     /** @brief Probability used to compute the Mahalanobis distance gating threshold.
@@ -209,7 +209,7 @@ public:
 template <typename Real, int n>
 class NoMeasurementModel : public GenericMeasurementModel<Real, n, 0> {
 public:
-    static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
+    [[nodiscard]] static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
         measure(const Eigen::Matrix<Real, n, 1>&)
     {
         return {Eigen::Matrix<Real, 0, 1>(), Eigen::Matrix<Real, 0, n>()};
@@ -243,7 +243,7 @@ public:
      *  - The covariance matrix of the process noise for the state transition.
      *  In many cases, the covariance matrix can be Q*dt for some constant Q.
      */
-    static std::tuple<State, StateJacobian, StateCovariance> predict(
+    [[nodiscard]] static std::tuple<State, StateJacobian, StateCovariance> predict(
         const State& state, Real dt) = delete;
 };
 
@@ -428,7 +428,7 @@ public:
      *  these timesteps are necessary to perform intermediate prediction steps.
      *  @return true if the measurement vector is non-empty, false otherwise
      */
-    bool hasMeasurement() const {
+    [[nodiscard]] bool hasMeasurement() const {
         return measurement.size() > 0;
     }
 private:
@@ -446,14 +446,14 @@ private:
      *
      * @return Squared Mahalanobis-distance threshold.
      */
-    Real getMahalanobisThreshold() {
+    [[nodiscard]] Real getMahalanobisThreshold() {
         // a static variable to cache the computed threshold value.
         static const Real value = computeMahalanobis();
         return value;
     }
     // a threshold for outlier rejection based on the
     // chi-squared distribution with m degrees of freedom and 99% confidence level.
-    Real computeMahalanobis() {
+    [[nodiscard]] Real computeMahalanobis() {
         Real m = measurement.size() > 0 ? measurement.size() : 1;
         Real z = normalInverseCDF(MeasurementModel::gatingProbability);
         Real a = 2.0 / (9.0 * m);
@@ -487,7 +487,9 @@ public:
      * @param other Entry to compare against.
      * @return `true` if this entry occurs no later than `other`.
      */
-    bool operator<=(const TimeStepVariant<Real, n, MeasurementModels...>& other) const {
+    [[nodiscard]] bool operator<=(
+        const TimeStepVariant<Real, n, MeasurementModels...>& other) const
+    {
         return time<=other.time;
     }
     /** @brief Constructs an empty timeline entry. */
@@ -569,11 +571,11 @@ public:
         return i;
     }
     /// @brief Returns the first element in the timeline.
-    TimeStep& front() {
+    [[nodiscard]] TimeStep& front() {
         return data[head];
     }
     /// @brief Returns the last element in the timeline.
-    TimeStep& back() {
+    [[nodiscard]] TimeStep& back() {
         return data[prev(tail)];
     }
     /** @brief Clears the timeline by resetting head and tail indices.
@@ -719,7 +721,7 @@ public:
      *
      *  @return A tuple containing the last state vector and covariance matrix.
      */
-    std::tuple<State, StateCovariance> getLastState() {
+    [[nodiscard]] std::tuple<State, StateCovariance> getLastState() {
         if(timeline.empty()) {
             return {initial_state, initial_state_covariance};
         }
@@ -727,7 +729,7 @@ public:
         return {last.state.state, last.state.state_covariance};
     }
     /// @brief Returns configured timeline capacity.
-    size_t getMaxHistoryCount() const {
+    [[nodiscard]] size_t getMaxHistoryCount() const {
         return timeline.size();
     }
     /// @brief Constructs EKF with default timeline history capacity.
