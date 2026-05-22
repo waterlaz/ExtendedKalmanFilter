@@ -598,6 +598,9 @@ public:
     [[nodiscard]] bool empty() const {
         return head == tail;
     }
+    [[nodiscard]] size_t capacity() const {
+        return data.size() - 1;
+    }
     /// @brief Constructs a timeline with fixed circular capacity.
     Timeline(size_t size=0) : data(size+1) {}
     /// @brief Returns a timeline element by internal index.
@@ -740,7 +743,7 @@ public:
     }
     /// @brief Returns configured timeline capacity.
     [[nodiscard]] size_t getMaxHistoryCount() const {
-        return timeline.size();
+        return timeline.capacity();
     }
     /// @brief Constructs EKF with default timeline history capacity.
     EKF() : timeline(10) {}
