@@ -54,6 +54,12 @@ concept ProcessModelConcept = requires(
     { P::predict(x, dt) } -> std::same_as<std::tuple<typename P::State, typename P::StateJacobian, typename P::StateCovariance>>;
 };
 
+template<typename T>
+concept TimeConcept = requires(T a, T b) {
+    { a <= b } -> std::convertible_to<bool>;
+    { b - a };
+};
+
 /** @brief Computes the inverse CDF of the standard normal distribution.
  *
  *  This function uses Peter J. Acklam's approximation for the inverse CDF
@@ -226,10 +232,12 @@ public:
  * @tparam R Floating-point type (for example `float` or `double`).
  * @tparam n Dimension of the state vector.
  */
-template <typename R, int n>
+template <typename R, int n, TimeConcept T = R>
 class GenericProcessModel {
 public:
     using Real = R;
+    using Time = T;
+    using Duration = decltype(Time() - Time());
     using State = Eigen::Matrix<Real, n, 1>;
     using StateCovariance = Eigen::Matrix<Real, n, n>;
     using StateJacobian = Eigen::Matrix<Real, n, n>;
@@ -244,7 +252,7 @@ public:
      *  In many cases, the covariance matrix can be Q*dt for some constant Q.
      */
     [[nodiscard]] static std::tuple<State, StateJacobian, StateCovariance> predict(
-        const State& state, Real dt) = delete;
+        const State& state, Duration dt) = delete;
 };
 
 
@@ -474,10 +482,10 @@ private:
  * @tparam n Dimension of the state vector.
  * @tparam MeasurementModels Supported measurement model types.
  */
-template <typename Real, int n, MeasurementModelConcept... MeasurementModels>
+template <typename Real, int n, TimeConcept Time, MeasurementModelConcept... MeasurementModels>
 class TimeStepVariant {
 public:
-    Real time;
+    Time time;
     FilterState<Real, n> state;
     std::variant<MeasurementStep<NoMeasurementModel<Real, n>>,
                  MeasurementStep<MeasurementModels>...> measurement_step;
@@ -488,7 +496,7 @@ public:
      * @return `true` if this entry occurs no later than `other`.
      */
     [[nodiscard]] bool operator<=(
-        const TimeStepVariant<Real, n, MeasurementModels...>& other) const
+        const TimeStepVariant<Real, n, Time, MeasurementModels...>& other) const
     {
         return time<=other.time;
     }
@@ -498,7 +506,7 @@ public:
      * @brief Constructs a prediction-only timeline entry.
      * @param time Timestamp associated with the entry.
      */
-    TimeStepVariant(Real time) :
+    TimeStepVariant(Time time) :
         time{time},
         measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
     {}
@@ -507,7 +515,7 @@ public:
      * @param time Timestamp associated with the entry.
      * @param state Initial filter state.
      */
-    TimeStepVariant(Real time, const FilterState<Real, n>& state) :
+    TimeStepVariant(Time time, const FilterState<Real, n>& state) :
         time{time},
         state{state},
         measurement_step{MeasurementStep<NoMeasurementModel<Real, n>>()}
@@ -519,7 +527,7 @@ public:
      * @param measurement_step Measurement step object.
      */
     template<MeasurementModelConcept MeasurementModel>
-    TimeStepVariant(Real time,
+    TimeStepVariant(Time time,
                     const MeasurementStep<MeasurementModel>& measurement_step) :
         time{time},
         measurement_step{measurement_step}
@@ -624,10 +632,12 @@ class EKF {
 public:
     static constexpr int n = ProcessModel::State::RowsAtCompileTime;
     using Real = typename ProcessModel::Real;
+    using Time = typename ProcessModel::Time;
+    using Duration = typename ProcessModel::Duration;
     using State = typename ProcessModel::State;
     using StateCovariance = typename ProcessModel::StateCovariance;
     using StateJacobian = typename ProcessModel::StateJacobian;
-    using TimeStep = TimeStepVariant<Real, n, MeasurementModels...>;
+    using TimeStep = TimeStepVariant<Real, n, Time, MeasurementModels...>;
     /// @brief stores TimeSteps sorted by time.
     Timeline<TimeStep> timeline;
     /// @brief the initial state vector for the EKF when there are no previous steps.
@@ -646,7 +656,7 @@ public:
      */
     template<MeasurementModelConcept MeasurementModel>
     const TimeStep& addMeasurementStep(
-        Real time,
+        Time time,
         const MeasurementStep<MeasurementModel>& measurement_step)
     {
         if(timeline.empty()) {
@@ -678,7 +688,7 @@ public:
 
     /// @brief Adds a new TimeStep with no measurement at the given time and
     /// performs the EKF prediction step based on the previous TimeStep.
-    const TimeStepVariant<Real, n, MeasurementModels...>& addNoMeasurement(Real time) {
+    const TimeStep& addNoMeasurement(Time time) {
         return addMeasurementStep(time, MeasurementStep<NoMeasurementModel<Real, n>>());
     }
     /** @brief Adds a new general TimeStep with a measurement at the given time.
@@ -690,8 +700,8 @@ public:
      * @return reference to the added TimeStep in the TimeLine.
      */
     template<MeasurementModelConcept MeasurementModel>
-    const TimeStepVariant<Real, n, MeasurementModels...>& addMeasurement(
-        Real time,
+    const TimeStep& addMeasurement(
+        Time time,
         const typename MeasurementModel::Measurement& measurement,
         const typename MeasurementModel::MeasurementCovariance& measurement_covariance)
     {
@@ -709,7 +719,7 @@ public:
      *  @param time The time at which to get the state and covariance.
      *  @return A tuple containing the state vector and covariance matrix at time t.
      */
-    std::tuple<State, StateCovariance> getState(Real time) {
+    std::tuple<State, StateCovariance> getState(Time time) {
         // this call might not add anything and just find an existing TimeStep
         auto step = addNoMeasurement(time);
         return {step.state, step.state_covariance};
