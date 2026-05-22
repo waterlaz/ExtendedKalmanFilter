@@ -723,9 +723,8 @@ public:
      *  @return A tuple containing the state vector and covariance matrix at time t.
      */
     std::tuple<State, StateCovariance> getState(Time time) {
-        // this call might not add anything and just find an existing TimeStep
         auto step = addNoMeasurement(time);
-        return {step.state, step.state_covariance};
+        return {step.state.state, step.state.state_covariance};
     }
     /** @brief Gets the last state and covariance in the TimeLine.
      *
