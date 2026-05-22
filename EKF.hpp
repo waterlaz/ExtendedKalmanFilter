@@ -38,15 +38,16 @@ concept MeasurementModelConcept = requires(
 /**
  * @brief Checks if a type satisfies the requirements of a process model for the EKF.
  * @details This concept requires that the type P has the following:
+ * - A nested type `Duration` representing the time duration type used for prediction steps.
  * - A nested type `State` representing the state vector.
  * - A nested type `StateCovariance` representing the covariance matrix of the state estimate.
  * - A nested type `StateJacobian` representing the Jacobian matrix of the state transition function.
- * - A static member function `predict(const State&, Real dt)` that takes previous state and passed time duration
+ * - A static member function `predict(const State&, Duration dt)` that takes previous state and passed time duration
  *   and returns a tuple of the predicted state, state Jacobian, and process noise covariance.
  */
 template<typename P>
 concept ProcessModelConcept = requires(
-    typename P::Real dt,
+    typename P::Duration dt,
     typename P::State x,
     typename P::StateCovariance Q,
     typename P::StateJacobian F
@@ -677,7 +678,7 @@ public:
             if(i != timeline.head) {
                 auto& prev = timeline[timeline.prev(i)];
                 auto& cur = timeline[i];
-                Real dt = cur.time - prev.time;
+                Duration dt = cur.time - prev.time;
                 auto x_prev = prev.state.state;
                 auto P_prev = prev.state.state_covariance;
                 auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
