@@ -13,6 +13,7 @@
 
 namespace ekf {
 
+#ifdef __cpp_concepts
 /**
  * @brief Checks if a type satisfies the requirements of a measurement model for the EKF.
  * @details This concept requires that the type M has the following:
@@ -60,6 +61,11 @@ concept TimeConcept = requires(T a, T b) {
     { a <= b } -> std::convertible_to<bool>;
     { b - a };
 };
+#else
+#define MeasurementModelConcept typename
+#define ProcessModelConcept typename
+#define TimeConcept typename
+#endif
 
 /** @brief Computes the inverse CDF of the standard normal distribution.
  *
@@ -550,13 +556,24 @@ public:
     size_t head = 0;
     /// @brief Tail index of the circular buffer.
     size_t tail = 0;
+
+    size_t find(const TimeStep& value) const {
+        size_t i = prev(tail);
+        while(i != head) {
+            if(data[i] >= value) {
+                return i;
+            }
+            i = prev(i);
+        }
+        return tail; // not found, return tail index
+    }
     /**
      * @brief Inserts a time step while preserving timeline order.
      * @param value Timeline value to insert.
      * @return Index where the value was inserted.
      */
     size_t insert(const TimeStep& value) {
-        assert(data.size() > 1 && "Timeline capacity must be greater than 0");
+        assert(capacity() > 0 && "Timeline capacity must be greater than 0");
         if(empty()) {
             data[tail] = value;
             tail = next(tail);
@@ -676,11 +693,11 @@ public:
 
         for(size_t i = res; i != timeline.tail; i = timeline.next(i)) {
             if(i != timeline.head) {
-                auto& prev = timeline[timeline.prev(i)];
+                const auto& prev = timeline[timeline.prev(i)];
                 auto& cur = timeline[i];
                 Duration dt = cur.time - prev.time;
-                auto x_prev = prev.state.state;
-                auto P_prev = prev.state.state_covariance;
+                const auto& x_prev = prev.state.state;
+                const auto& P_prev = prev.state.state_covariance;
                 auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
                 cur.state.predict(x_pred, P_prev, F, Q);
                 std::visit([&](auto&& step) {
@@ -746,7 +763,7 @@ public:
         return timeline.capacity();
     }
     /// @brief Constructs EKF with default timeline history capacity.
-    EKF() : timeline(10) {}
+    explicit EKF(size_t history_capacity=1000) : timeline(history_capacity) {}
 };
 
 } // namespace ekf
