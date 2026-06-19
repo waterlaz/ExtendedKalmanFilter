@@ -717,7 +717,7 @@ public:
         const MeasurementStep<MeasurementModel>& measurement_step)
     {
         if(timeline.empty()) {
-            auto i = timeline.insert(TimeStep(
+            timeline.insert(TimeStep(
                 time,
                 FilterState<Real, n>(initial_state, initial_state_covariance)));
         }

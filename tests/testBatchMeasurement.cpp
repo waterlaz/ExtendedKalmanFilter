@@ -73,11 +73,10 @@ int main() {
         float position = dx * t; // True position (for testing)
         ekf.addPosition(t, position);
         last_time = t;
-        //std::cout<<t<<" "<<ekf.getSpeed()<<" "<<ekf.getPosition()<<std::endl;
     }
     float test_time = last_time + 10*dt;
     float test_position = dx * test_time; // True position at test time
-    int numEntries = ekf.timeline.size();
+    size_t numEntries = ekf.timeline.size();
     for(int i=0; i<100; i++) {
         float x = ekf.getPositionAtTime(test_time);
         if (std::abs(x - test_position) > 0.01) {
