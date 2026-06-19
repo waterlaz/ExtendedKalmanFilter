@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -I/usr/include/eigen3
+CXXFLAGS := -std=c++20 -Wall -Wextra $(shell pkgconf --cflags eigen3)
 
 TEST_SRCS := $(wildcard *.cpp)
 PROJECT_SRCS := $(wildcard ../*.hpp ../*.cpp)
