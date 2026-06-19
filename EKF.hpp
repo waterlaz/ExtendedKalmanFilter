@@ -556,14 +556,23 @@ public:
     size_t head = 0;
     /// @brief Tail index of the circular buffer.
     size_t tail = 0;
-
+    /**
+     * @brief Finds the index of the last entry in the timeline that is less than or equal to the given value.
+     *
+     * This function searches the timeline in reverse order, starting from the tail,
+     * and returns the index of the last entry that is less than or equal to the specified value.
+     * If no such entry is found, it returns the tail index, indicating that the value is not present in the timeline.
+     * @param value The value to search for in the timeline.
+     * @return The index of the last entry less than or equal to the given value, or the tail index if not found.
+     */
     size_t find(const TimeStep& value) const {
-        size_t i = prev(tail);
+        size_t i = tail;
         while(i != head) {
-            if(data[i] >= value) {
-                return i;
+            int j = prev(i);
+            if(data[j] <= value) {
+                return j;
             }
-            i = prev(i);
+            i = j;
         }
         return tail; // not found, return tail index
     }
