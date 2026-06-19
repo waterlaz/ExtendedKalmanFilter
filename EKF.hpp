@@ -646,6 +646,11 @@ public:
     [[nodiscard]] bool empty() const {
         return head == tail;
     }
+    /// @brief Returns the number of entries currently stored in the timeline.
+    [[nodiscard]] size_t size() const {
+        return (tail + data.size() - head) % data.size();
+    }
+    /// @brief Returns the maximum number of entries that can be stored.
     [[nodiscard]] size_t capacity() const {
         return data.size() - 1;
     }
@@ -678,7 +683,8 @@ private:
  * @tparam ProcessModel Dynamic model used for state prediction.
  * @tparam MeasurementModels Supported measurement model types.
  */
-template <ProcessModelConcept ProcessModel, MeasurementModelConcept... MeasurementModels>
+template <ProcessModelConcept ProcessModel,
+          MeasurementModelConcept... MeasurementModels>
 class EKF {
 public:
     static constexpr int n = ProcessModel::State::RowsAtCompileTime;
@@ -718,8 +724,14 @@ public:
         if(timeline.front().time > time) {
             return timeline.front();
         }
+        if(!measurement_step.hasMeasurement()) {
+            auto f = timeline.find(TimeStep(time));
+            if(f != timeline.tail && timeline[f].time == time) {
+                // if there is already a TimeStep at this time, we just return it
+                return timeline[f];
+            }
+        }
         auto res = timeline.insert(TimeStep(time, measurement_step));
-        res = timeline.prev(res);
 
         for(auto i = res; i != timeline.tail; i = timeline.next(i)) {
             if(i != timeline.head) {
