@@ -79,7 +79,6 @@ concept TimeConcept = requires(T a, T b) {
  *  must be in the range (0,1).
  *  @return The number z such that the probability of a standard normal random
  *  variable being less than or equal to z is p.
- *  @throws std::domain_error if p is not in the range (0,1).
  */
 template<typename Real>
 [[nodiscard]] Real normalInverseCDF(Real p) {
