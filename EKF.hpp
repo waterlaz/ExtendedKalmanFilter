@@ -62,6 +62,8 @@ concept TimeConcept = requires(T a, T b) {
     { b - a };
 };
 #else
+//If your compiler produces an error here, comment out the #warning directive
+#warning "Concepts are not supported by the compiler. Using fallback."
 #define MeasurementModelConcept typename
 #define ProcessModelConcept typename
 #define TimeConcept typename
@@ -572,6 +574,7 @@ public:
         operator size_t() const { return index; }
     public:
         bool operator==(const Handle& other) const { return index == other.index; }
+        bool operator!=(const Handle& other) const { return index != other.index; }
     };
     /// @brief Head index of the circular buffer.
     Handle head = 0;
