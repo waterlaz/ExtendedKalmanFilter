@@ -28,7 +28,7 @@ int main() {
         }
         for(auto lookupTime:lookupTimes){
             auto f = timeline.find(lookupTime);
-            for(size_t j=testTimes.size()-1; j!=0; j--){
+            for(int j=testTimes.size()-1; j>=0; j--){
                 if(testTimes[j] <= lookupTime){
                     if(testTimes[j] != timeline[f]){
                         std::cout << "Error at lookup of " << lookupTime
