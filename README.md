@@ -1,6 +1,6 @@
 # ExtendedKalmanFilter
 
-A header-only C++20 Extended Kalman Filter (EKF) library based on Eigen.
+A header-only C++20 (also supports older version) Extended Kalman Filter (EKF) library based on Eigen.
 
 This library is designed for real-time sensor fusion with:
 - Multiple measurement model types
@@ -13,7 +13,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 ## Features
 
 - **Header-only**: include `EKF.hpp` and start using it.
-- **Strongly typed models**: process and measurement interfaces are checked with C++20 concepts.
+- **Strongly typed models**: process and measurement interfaces are checked with C++20 concepts with fallbacks for older compilers.
 - **Multiple measurement models**: use one EKF instance with different sensor types.
 - **Predictable performance**: no dynamic memory allocations after initialization.
 - **Out-of-order updates**: insert old measurements; subsequent states are recomputed automatically.
