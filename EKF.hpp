@@ -507,6 +507,18 @@ public:
     {
         return time<=other.time;
     }
+    /** @brief Updates the filter state using the stored measurement step.
+     *
+     * This function applies the EKF update step for the measurement stored in
+     * this timeline entry, modifying the provided filter state accordingly.
+     * If the measurement step contains no measurement,
+     * the filter state will remain unchanged.
+     * @param filter_state The filter state to update based on the measurement step.
+     */
+    void update(FilterState<Real, n>& filter_state) {
+        std::visit([&](auto&& step) {
+            step.update(filter_state); }, measurement_step);
+    }
     /** @brief Constructs an empty timeline entry. */
     TimeStepVariant() = default;
     /**
@@ -557,6 +569,7 @@ public:
         friend class Timeline;
         size_t index;
         Handle(size_t index) : index(index) {}
+        operator size_t() const { return index; }
     public:
         bool operator==(const Handle& other) const { return index == other.index; }
     };
@@ -577,7 +590,7 @@ public:
         Handle i = tail;
         while(i != head) {
             Handle j = prev(i);
-            if(data[j.index] <= value) {
+            if(data[j] <= value) {
                 return j;
             }
             i = j;
@@ -592,20 +605,20 @@ public:
     Handle insert(const TimeStep& value) {
         assert(capacity() > 0 && "Timeline capacity must be greater than 0");
         if(empty()) {
-            data[tail.index] = value;
+            data[tail] = value;
             tail = next(tail);
             return prev(tail);
         }
         Handle i = tail;
         while(i!=head) {
             Handle j = prev(i);
-            if(data[j.index] <= value) {
+            if(data[j] <= value) {
                 break;
             }
-            data[i.index] = std::move(data[j.index]);
+            data[i] = std::move(data[j]);
             i = j;
         }
-        data[i.index] = value;
+        data[i] = value;
         tail = next(tail);
         if(tail == head) {
             // the buffer is full, we need to overwrite the oldest entry
@@ -640,15 +653,15 @@ public:
     Timeline(size_t size=0) : data(size+1) {}
     /// @brief Returns a timeline element by internal index.
     [[nodiscard]] TimeStep& operator[](Handle i) {
-        return data[i.index];
+        return data[i];
     }
     /// @brief Returns previous circular index.
     [[nodiscard]] Handle prev(Handle i) const {
-        return (i.index + data.size() - 1) % data.size();
+        return (i + data.size() - 1) % data.size();
     }
     /// @brief Returns next circular index.
     [[nodiscard]] Handle next(Handle i) const {
-        return (i.index + 1) % data.size();
+        return (i + 1) % data.size();
     }
 private:
     std::vector<TimeStep> data;
@@ -717,8 +730,7 @@ public:
                 const auto& P_prev = prev.state.state_covariance;
                 auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
                 cur.state.predict(x_pred, P_prev, F, Q);
-                std::visit([&](auto&& step) {
-                    step.update(cur.state); }, cur.measurement_step);
+                cur.update(cur.state);
             }
         }
         return timeline[res];
