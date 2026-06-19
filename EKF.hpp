@@ -51,9 +51,10 @@ concept ProcessModelConcept = requires(
     typename P::Duration dt,
     typename P::State x,
     typename P::StateCovariance Q,
-    typename P::StateJacobian F
+    typename P::StateJacobian F,
+    P process
 ) {
-    { P::predict(x, dt) } -> std::same_as<std::tuple<typename P::State, typename P::StateJacobian, typename P::StateCovariance>>;
+    { process.predict(x, dt) } -> std::same_as<std::tuple<typename P::State, typename P::StateJacobian, typename P::StateCovariance>>;
 };
 
 template<typename T>
@@ -259,7 +260,7 @@ public:
      *  - The covariance matrix of the process noise for the state transition.
      *  In many cases, the covariance matrix can be Q*dt for some constant Q.
      */
-    [[nodiscard]] static std::tuple<State, StateJacobian, StateCovariance> predict(
+    [[nodiscard]] std::tuple<State, StateJacobian, StateCovariance> predict(
         const State& state, Duration dt) = delete;
 };
 
@@ -703,6 +704,8 @@ public:
     State initial_state;
     /// @brief the initial state covariance matrix for the EKF.
     StateCovariance initial_state_covariance;
+    /// @brief the process model used for state prediction.
+    ProcessModel process_model;
     /// @brief resets the EKF to the initial state.
     void reset() {
         timeline.clear();
@@ -742,7 +745,7 @@ public:
                 Duration dt = cur.time - prev.time;
                 const auto& x_prev = prev.state.state;
                 const auto& P_prev = prev.state.state_covariance;
-                auto [x_pred, F, Q] = ProcessModel::predict(x_prev, dt);
+                auto [x_pred, F, Q] = process_model.predict(x_prev, dt);
                 cur.state.predict(x_pred, P_prev, F, Q);
                 cur.update(cur.state);
             }
