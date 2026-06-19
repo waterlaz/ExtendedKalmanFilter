@@ -17,7 +17,8 @@ int main() {
         while(testTimes.size() > capacity){
             testTimes.erase(testTimes.begin());
         }
-        for(size_t i=timeline.head, j=0; i!=timeline.tail; i = timeline.next(i), j++){
+        size_t j=0;
+        for(auto i=timeline.head; i!=timeline.tail; i = timeline.next(i), j++){
             if(timeline[i] != testTimes[j]){
                 std::cout << "Error at time " << t
                           << ": expected " << testTimes[j]
@@ -34,7 +35,7 @@ int main() {
                                   << ": expected " << testTimes[j]
                                   << ", got " << timeline[f] << std::endl;
                         std::cout << "Timeline contents: ";
-                        for(size_t i=timeline.head; i!=timeline.tail; i = timeline.next(i)){
+                        for(auto i=timeline.head; i!=timeline.tail; i = timeline.next(i)){
                             std::cout<<timeline[i] << " ";
                         }
                         std::cout << std::endl;

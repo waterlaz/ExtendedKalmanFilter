@@ -552,10 +552,18 @@ public:
 template <typename TimeStep>
 class Timeline {
 public:
+    /// @brief Handle type used to reference entries in the timeline.
+    class Handle {
+        friend class Timeline;
+        size_t index;
+        Handle(size_t index) : index(index) {}
+    public:
+        bool operator==(const Handle& other) const { return index == other.index; }
+    };
     /// @brief Head index of the circular buffer.
-    size_t head = 0;
+    Handle head = 0;
     /// @brief Tail index of the circular buffer.
-    size_t tail = 0;
+    Handle tail = 0;
     /**
      * @brief Finds the index of the last entry in the timeline that is less than or equal to the given value.
      *
@@ -565,11 +573,11 @@ public:
      * @param value The value to search for in the timeline.
      * @return The index of the last entry less than or equal to the given value, or the tail index if not found.
      */
-    size_t find(const TimeStep& value) const {
-        size_t i = tail;
+    Handle find(const TimeStep& value) const {
+        Handle i = tail;
         while(i != head) {
-            int j = prev(i);
-            if(data[j] <= value) {
+            Handle j = prev(i);
+            if(data[j.index] <= value) {
                 return j;
             }
             i = j;
@@ -581,23 +589,23 @@ public:
      * @param value Timeline value to insert.
      * @return Index where the value was inserted.
      */
-    size_t insert(const TimeStep& value) {
+    Handle insert(const TimeStep& value) {
         assert(capacity() > 0 && "Timeline capacity must be greater than 0");
         if(empty()) {
-            data[tail] = value;
+            data[tail.index] = value;
             tail = next(tail);
             return prev(tail);
         }
-        size_t i = tail;
+        Handle i = tail;
         while(i!=head) {
-            size_t j = prev(i);
-            if(data[j] <= value) {
+            Handle j = prev(i);
+            if(data[j.index] <= value) {
                 break;
             }
-            data[i] = std::move(data[j]);
+            data[i.index] = std::move(data[j.index]);
             i = j;
         }
-        data[i] = value;
+        data[i.index] = value;
         tail = next(tail);
         if(tail == head) {
             // the buffer is full, we need to overwrite the oldest entry
@@ -631,16 +639,16 @@ public:
     /// @brief Constructs a timeline with fixed circular capacity.
     Timeline(size_t size=0) : data(size+1) {}
     /// @brief Returns a timeline element by internal index.
-    [[nodiscard]] TimeStep& operator[](size_t i) {
-        return data[i];
+    [[nodiscard]] TimeStep& operator[](Handle i) {
+        return data[i.index];
     }
     /// @brief Returns previous circular index.
-    [[nodiscard]] size_t prev(size_t index) const {
-        return (index + data.size() - 1) % data.size();
+    [[nodiscard]] Handle prev(Handle i) const {
+        return (i.index + data.size() - 1) % data.size();
     }
     /// @brief Returns next circular index.
-    [[nodiscard]] size_t next(size_t index) const {
-        return (index + 1) % data.size();
+    [[nodiscard]] Handle next(Handle i) const {
+        return (i.index + 1) % data.size();
     }
 private:
     std::vector<TimeStep> data;
@@ -690,17 +698,17 @@ public:
         const MeasurementStep<MeasurementModel>& measurement_step)
     {
         if(timeline.empty()) {
-            size_t i = timeline.insert(TimeStep(
+            auto i = timeline.insert(TimeStep(
                 time,
                 FilterState<Real, n>(initial_state, initial_state_covariance)));
         }
         if(timeline.front().time > time) {
             return timeline.front();
         }
-        size_t res = timeline.insert(TimeStep(time, measurement_step));
+        auto res = timeline.insert(TimeStep(time, measurement_step));
         res = timeline.prev(res);
 
-        for(size_t i = res; i != timeline.tail; i = timeline.next(i)) {
+        for(auto i = res; i != timeline.tail; i = timeline.next(i)) {
             if(i != timeline.head) {
                 const auto& prev = timeline[timeline.prev(i)];
                 auto& cur = timeline[i];
