@@ -576,18 +576,18 @@ public:
         bool operator==(const Handle& other) const { return index == other.index; }
         bool operator!=(const Handle& other) const { return index != other.index; }
     };
-    /// @brief Head index of the circular buffer.
+    /// @brief Head handle of the circular buffer.
     Handle head = 0;
-    /// @brief Tail index of the circular buffer.
+    /// @brief Tail handle of the circular buffer.
     Handle tail = 0;
     /**
-     * @brief Finds the index of the last entry in the timeline that is less than or equal to the given value.
+     * @brief Finds the handle of the last entry in the timeline that is less than or equal to the given value.
      *
      * This function searches the timeline in reverse order, starting from the tail,
-     * and returns the index of the last entry that is less than or equal to the specified value.
-     * If no such entry is found, it returns the tail index, indicating that the value is not present in the timeline.
+     * and returns the handle of the last entry that is less than or equal to the specified value.
+     * If no such entry is found, it returns the tail handle, indicating that the value is not present in the timeline.
      * @param value The value to search for in the timeline.
-     * @return The index of the last entry less than or equal to the given value, or the tail index if not found.
+     * @return The handle of the last entry less than or equal to the given value, or the tail handle if not found.
      */
     Handle find(const TimeStep& value) const {
         Handle i = tail;
@@ -598,7 +598,7 @@ public:
             }
             i = j;
         }
-        return tail; // not found, return tail index
+        return tail; // not found, return tail handle
     }
     /**
      * @brief Inserts a time step while preserving timeline order.
@@ -659,15 +659,15 @@ public:
     }
     /// @brief Constructs a timeline with fixed circular capacity.
     Timeline(size_t size=0) : data(size+1) {}
-    /// @brief Returns a timeline element by internal index.
+    /// @brief Returns a timeline element by internal handle.
     [[nodiscard]] TimeStep& operator[](Handle i) {
         return data[i];
     }
-    /// @brief Returns previous circular index.
+    /// @brief Returns previous circular handle.
     [[nodiscard]] Handle prev(Handle i) const {
         return (i + data.size() - 1) % data.size();
     }
-    /// @brief Returns next circular index.
+    /// @brief Returns next circular handle.
     [[nodiscard]] Handle next(Handle i) const {
         return (i + 1) % data.size();
     }
