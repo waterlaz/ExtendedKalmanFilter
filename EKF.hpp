@@ -44,7 +44,7 @@ concept MeasurementModelConcept = requires(
  * - A nested type `State` representing the state vector.
  * - A nested type `StateCovariance` representing the covariance matrix of the state estimate.
  * - A nested type `StateJacobian` representing the Jacobian matrix of the state transition function.
- * - A static member function `predict(const State&, Duration dt)` that takes previous state and passed time duration
+ * - A member function `predict(const State&, Duration dt)` that takes previous state and passed time duration
  *   and returns a tuple of the predicted state, state Jacobian, and process noise covariance.
  */
 template<typename P>

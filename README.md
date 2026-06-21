@@ -48,7 +48,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 4. Set `initial_state` and `initial_state_covariance`.
 5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `getState(time)`.
 
-## Build test
+## Build and run tests
 
 ```bash
 cd tests
