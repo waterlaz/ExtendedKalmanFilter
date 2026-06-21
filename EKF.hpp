@@ -8,6 +8,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -184,9 +185,9 @@ public:
     using Measurement = Eigen::Matrix<Real, m, 1>;
     using MeasurementJacobian = Eigen::Matrix<Real, m, n>;
     using MeasurementCovariance = Eigen::Matrix<Real, m, m>;
-    /**  @brief The function that maps the state to the tuple (measurement, Jacobian).
+    /**  @brief The function that maps the state to the pair (measurement, Jacobian).
      *
-     *  This function takes a state vector as input and returns a tuple containing:
+     *  This function takes a state vector as input and returns a pair containing:
      *  - The expected measurement vector corresponding to the input state.
      *  - The measurement Jacobian matrix,
      *  which is the derivative of the measurement function with respect to the state.
@@ -782,9 +783,9 @@ public:
      *  and the state and covariance will be predicted based on the previous TimeStep.
      *
      *  @param time The time at which to get the state and covariance.
-     *  @return A tuple containing the state vector and covariance matrix at time t.
+     *  @return A pair containing the state vector and covariance matrix at time t.
      */
-    std::tuple<State, StateCovariance> predictState(Time time) {
+    std::pair<State, StateCovariance> predictState(Time time) {
         auto step = addNoMeasurement(time);
         return {step.state.state, step.state.state_covariance};
     }
@@ -793,9 +794,9 @@ public:
      *  If the TimeLine is empty, it returns the initial state and covariance.
      *  Otherwise, it returns the state and covariance of the last TimeStep.
      *
-     *  @return A tuple containing the last state vector and covariance matrix.
+     *  @return A pair containing the last state vector and covariance matrix.
      */
-    [[nodiscard]] std::tuple<State, StateCovariance> getLastState() const {
+    [[nodiscard]] std::pair<State, StateCovariance> getLastState() const {
         if(timeline.empty()) {
             return {initial_state, initial_state_covariance};
         }
