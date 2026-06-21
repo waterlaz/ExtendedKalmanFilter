@@ -630,13 +630,11 @@ public:
         return i;
     }
     /// @brief Returns the first element in the timeline.
-    [[nodiscard]] TimeStep& front() {
-        return data[head];
-    }
+    [[nodiscard]] TimeStep& front() { return data[head]; }
+    [[nodiscard]] const TimeStep& front() const { return data[head]; }
     /// @brief Returns the last element in the timeline.
-    [[nodiscard]] TimeStep& back() {
-        return data[prev(tail)];
-    }
+    [[nodiscard]] TimeStep& back() { return data[prev(tail)]; }
+    [[nodiscard]] const TimeStep& back() const { return data[prev(tail)]; }
     /** @brief Clears the timeline by resetting head and tail indices.
      *  The actual data in the vector is not modified, but will be overwritten
      *  by future insertions.
@@ -786,7 +784,7 @@ public:
      *  @param time The time at which to get the state and covariance.
      *  @return A tuple containing the state vector and covariance matrix at time t.
      */
-    std::tuple<State, StateCovariance> getState(Time time) {
+    std::tuple<State, StateCovariance> predictState(Time time) {
         auto step = addNoMeasurement(time);
         return {step.state.state, step.state.state_covariance};
     }
@@ -797,7 +795,7 @@ public:
      *
      *  @return A tuple containing the last state vector and covariance matrix.
      */
-    [[nodiscard]] std::tuple<State, StateCovariance> getLastState() {
+    [[nodiscard]] std::tuple<State, StateCovariance> getLastState() const {
         if(timeline.empty()) {
             return {initial_state, initial_state_covariance};
         }

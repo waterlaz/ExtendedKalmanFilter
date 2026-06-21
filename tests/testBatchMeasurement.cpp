@@ -54,7 +54,7 @@ public:
         return state[0]; // Return the estimated position
     }
     float getPositionAtTime(float t) {
-        auto [state, covariance] = this->getState(t);
+        auto [state, covariance] = this->predictState(t);
         return state[0]; // Return the estimated position at time t
     }
     float getSpeed() {
