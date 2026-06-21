@@ -49,11 +49,9 @@ concept MeasurementModelConcept = requires(
  */
 template<typename P>
 concept ProcessModelConcept = requires(
+    P process,
     typename P::Duration dt,
-    typename P::State x,
-    typename P::StateCovariance Q,
-    typename P::StateJacobian F,
-    P process
+    typename P::State x
 ) {
     { process.predict(x, dt) } -> std::same_as<std::tuple<typename P::State, typename P::StateJacobian, typename P::StateCovariance>>;
 };
@@ -64,8 +62,7 @@ concept TimeConcept = requires(T a, T b) {
     { b - a };
 };
 #else
-//If your compiler produces an error here, comment out the #warning directive
-#warning "Concepts are not supported by the compiler. Using fallback."
+/*If your compiler produces an error here, comment out the line*/ #warning "Concepts are not supported by the compiler. Using fallback."
 #define MeasurementModelConcept typename
 #define ProcessModelConcept typename
 #define TimeConcept typename
