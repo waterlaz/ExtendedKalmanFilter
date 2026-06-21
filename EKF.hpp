@@ -134,7 +134,7 @@ template<typename Real>
  *  @return The normalized angle in the range [-pi, pi].
  */
 template <typename Real>
-[[nodiscard]] Real normalizeAngle(Real angle) {
+[[nodiscard]] constexpr Real normalizeAngle(Real angle) {
     constexpr Real PI = Real(3.14159265358979323846);
     constexpr Real TWO_PI = Real(2) * PI;
     return angle - TWO_PI * std::floor((angle + PI) / TWO_PI);
@@ -203,7 +203,7 @@ public:
      *  For example, if the state vector is [x, y, theta] and theta is an angle,
      *  then anglesIndices should be set to {2} (assuming 0-based indexing).
      */
-    [[nodiscard]] static std::array<size_t, 0> measurementAngleIndices() {
+    [[nodiscard]] static constexpr std::array<size_t, 0> measurementAngleIndices() {
         return {};
     }
     /** @brief Probability used to compute the Mahalanobis distance gating threshold.
