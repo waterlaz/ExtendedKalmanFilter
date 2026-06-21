@@ -27,7 +27,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 
 ## Requirements
 
-- C++20 compiler
+- C++11 compiler (or C++20 compiler for concepts support)
 - [Eigen](https://eigen.tuxfamily.org/) (`Eigen/Dense`)
 
 ## Project layout
@@ -35,6 +35,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 - `EKF.hpp` – library implementation and API documentation (Doxygen style comments)
 - `examples/simple_1d.cpp` – minimal runnable usage example
 - `tests/testTimeLine.cpp` – timeline ordering test executable
+- `tests/testBatchMeasurement.cpp` – tests not flooding the timeline when querying states at the same time. Also tests for simple prediction being sane.
 - `Doxyfile` – Doxygen configuration
 
 ## Quick start
