@@ -49,7 +49,11 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `getState(time)`.
 
 ## Build test
-...
+
+```bash
+cd tests
+make
+```
 
 ## Core API reference
 
