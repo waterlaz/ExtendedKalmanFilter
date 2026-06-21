@@ -8,7 +8,7 @@
 using namespace ekf;
 using namespace Eigen;
 
-class SpeedMeasurement : public GenericMeasurementModel<float, 2, 1> {
+class SpeedMeasurement : public MeasurementModelBase<float, 2, 1> {
 public:
     static constexpr Real gatingProbability = 0.99;
     static std::pair<Vector<float, 1>, Matrix<float, 1, 2>> measure(const Vector<float, 2>& state) {
@@ -16,12 +16,9 @@ public:
         H << 0, 1; // We only measure speed
         return {H*state, H};
     }
-    static std::array<size_t, 1> measurementAngleIndices() {
-        return {0};
-    }
 };
 
-class PositionMeasurement : public GenericMeasurementModel<float, 2, 1> {
+class PositionMeasurement : public MeasurementModelBase<float, 2, 1> {
 public:
     static constexpr Real gatingProbability = 0.95;
     static std::pair<Vector<float, 1>, Matrix<float, 1, 2>> measure(const Vector<float, 2>& state) {
@@ -29,11 +26,14 @@ public:
         H << 1, 0; // We only measure position
         return {H*state, H};
     }
+    static std::array<size_t, 1> measurementAngleIndices() {
+        return {0};
+    }
 };
 
-class Simple1DModel : public GenericProcessModel<float, 2> {
+class Simple1DModel : public ProcessModelBase<float, 2> {
 public:
-    static std::tuple<State, StateJacobian, StateCovariance> predict(const State& state, float dt){
+    std::tuple<State, StateJacobian, StateCovariance> predict(const State& state, float dt){
         float x = state[0]; // Position
         float v = state[1]; // Speed
         State x_pred(x + v*dt, v); // Simple linear motion
@@ -80,15 +80,16 @@ int main() {
     std::mt19937 gen(rd());
     std::normal_distribution<float> dis(0.0, 0.1);
     EKF_1D ekf;
-    EKF_1D ekf2;
+    //EKF_1D ekf2;
     float t = 0.0;
     float dt = 0.1; // Time step
     for(int i=0; i<100; i++) {
         float x = sin(0.1*t); // True position
         float noisy_x = x + dis(gen); // Measurement noise
         ekf.addPosition(t, noisy_x); // Add noisy position measurement
-        ekf2.addPosition(t, noisy_x); // Add noisy position measurement
-        std::cout<<t<<" "<<x<<" "<<noisy_x<<" "<<ekf.getPosition()<<" "<<ekf2.getPosition()<<" "<<std::endl; // Print time, true position, and estimated position
+        //ekf2.addPosition(t, noisy_x); // Add noisy position measurement
+        //std::cout<<t<<" "<<x<<" "<<noisy_x<<" "<<ekf.getPosition()<<" "<<ekf2.getPosition()<<" "<<std::endl; // Print time, true position, and estimated position
+        std::cout<<t<<" "<<x<<" "<<noisy_x<<" "<<ekf.getPosition()<<std::endl; // Print time, true position, and estimated position
         t += dt;
         float v = 0.1*cos(0.1*t); // True speed
         float noisy_v = v + 0.01*dis(gen); // Measurement noise

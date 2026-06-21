@@ -8,7 +8,7 @@
 using namespace ekf;
 using namespace Eigen;
 
-class PositionMeasurement : public GenericMeasurementModel<float, 2, 1> {
+class PositionMeasurement : public MeasurementModelBase<float, 2, 1> {
 public:
     static std::pair<Vector<float, 1>, Matrix<float, 1, 2>> measure(const Vector<float, 2>& state) {
         Matrix<float, 1, 2> H; // Measurement matrix
@@ -17,7 +17,7 @@ public:
     }
 };
 
-class Simple1DModel : public GenericProcessModel<float, 2> {
+class Simple1DModel : public ProcessModelBase<float, 2> {
 public:
     static std::tuple<State, StateJacobian, StateCovariance> predict(const State& state, float dt){
         float x = state[0]; // Position

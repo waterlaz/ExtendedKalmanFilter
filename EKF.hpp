@@ -176,7 +176,7 @@ template <typename Real, int n>
  * @tparam m Dimension of the measurement vector.
  */
 template <typename R, int n, int m>
-class GenericMeasurementModel {
+class MeasurementModelBase {
 public:
     using Real = R;
     using State = Eigen::Matrix<Real, n, 1>;
@@ -222,7 +222,7 @@ public:
  * @tparam n Dimension of the state vector.
  */
 template <typename Real, int n>
-class NoMeasurementModel : public GenericMeasurementModel<Real, n, 0> {
+class NoMeasurementModel : public MeasurementModelBase<Real, n, 0> {
 public:
     [[nodiscard]] static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
         measure(const Eigen::Matrix<Real, n, 1>&)
@@ -242,7 +242,7 @@ public:
  * @tparam n Dimension of the state vector.
  */
 template <typename R, int n, TimeConcept T = R>
-class GenericProcessModel {
+class ProcessModelBase {
 public:
     using Real = R;
     using Time = T;
