@@ -808,6 +808,12 @@ public:
     explicit EKF(size_t history_capacity=1000) : timeline(history_capacity) {}
 };
 
+#ifndef __cpp_concepts
+#undef MeasurementModelConcept
+#undef ProcessModelConcept
+#undef TimeConcept
+#endif
+
 } // namespace ekf
 
 
