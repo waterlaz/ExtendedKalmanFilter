@@ -5,7 +5,7 @@ In this example we estimate the position and speed of an object moving in one di
 * a position sensor,
 * a speed sensor.
 
-The state vector $s$ consists of the position $x$ and speed $v$:
+The state vector $\vec{s}$ consists of the position $x$ and speed $v$:
 
 $$\vec{s} = (x, v)^T.$$
 
@@ -48,7 +48,7 @@ $$v_{k+1}=v_k.$$
 
 The Jacobian $F$ of the state transition function is
 
-$$ F = 
+$$ F =
 \begin{bmatrix}
 \frac{\partial x_{k+1}}{\partial x_k} & \frac{\partial x_{k+1}}{\partial v_k}\\\
 \frac{\partial v_{k+1}}{\partial x_k} & \frac{\partial v_{k+1}}{\partial v_k}
@@ -59,28 +59,33 @@ $$ F =
 \end{bmatrix}.$$
 
 
-Process noise models small unmodelled accelerations.
+Process noise is defined by its covariance $Q$ and models small unmodelled accelerations that do not fit in the constant velocity assumption.
+The covariance of the process noise is typically assumed to be proportional to the time interval $dt$: $Q\cdot dt$. For a simple model, we assume diagonal process noise covariance, where $Q_{11}$ models the uncertainty in position and $Q_{22}$ models the uncertainty in speed.
+
+To define the process model, derive a class from `ProcessModelBase` and implement the `predict` method, which returns the predicted state, the Jacobian, and the process noise covariance. The `EKF` class keeps an instance of the process model class and calls the `predict` method whenever a new measurement is added.
 
 ```cpp process_model
-class Simple1DModel : public ProcessModelBase<float, 2> {
+// inherit from ProcessModelBase for convenience and implement the predict method
+class Simple1DModel : public ProcessModelBase<float, 2> { //use float as scalar type and 2 as state dimension
 public:
+    // return the predicted state, the Jacobian, and the process noise covariance
     std::tuple<State, StateJacobian, StateCovariance>
     predict(const State& state, float dt) {
 
-        float x = state[0];
-        float v = state[1];
+        float x = state[0]; // position
+        float v = state[1]; // speed
 
-        State x_pred(x + v*dt, v);
+        State state_pred(x + v*dt, v); // predict next state
 
         StateJacobian F;
-        F << 1, dt,
-             0, 1;
+        F << 1, dt, // position depends on both position and speed
+             0, 1; // speed depends only on speed
 
         StateCovariance Q;
-        Q << 0.1, 0,
-             0, 0.01;
+        Q << 0.01, 0, // process noise for position
+             0, 0.01; // process noise for speed
 
-        return {x_pred, F, 0.1*Q*dt};
+        return {state_pred, F, Q*dt};
     }
 };
 ```
