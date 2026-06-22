@@ -9,7 +9,11 @@ The state vector $s$ consists of the position $x$ and speed $v$:
 
 $$\vec{s} = (x, v)^T.$$
 
-To use the Kalman filter one has to provide the following
+To use the Kalman filter one has to provide the following components:
+* a [process model](#defining-the-process-model) that describes how the state evolves over time,
+* a measurement model for each sensor that describes how the measurements relate to the state:
+    * [a speed measurement model](#defining-a-speed-measurement-model),
+    * [a position measurement model](#defining-a-position-measurement-model).
 
 ## Including the library
 
@@ -23,6 +27,64 @@ The filter implementation uses Eigen for vectors and matrices. All you need to s
 
 using namespace ekf;
 using namespace Eigen;
+```
+
+## Defining the process model
+
+The process model describes how the state evolves over time. This includes:
+* the state transition function, which predicts the next state $(x_{k+1}, v_{k+1})$ based on the current state $(x_k, v_k)$ and time interval $dt$,
+* the Jacobian of the state transition function, which is used to propagate the uncertainty of the state,
+* the process noise covariance, which defines how uncertainty grows over time.
+
+This example assumes constant velocity motion.
+
+During a time interval $dt$:
+
+$$ x_{k+1} = x_k + v_k dt, $$
+
+while the speed remains constant,
+
+$$v_{k+1}=v_k.$$
+
+The Jacobian $F$ of the state transition function is
+
+$$
+F=
+\begin{bmatrix}
+\frac{\partial x_{k+1}}{\partial x_k} & \frac{\partial x_{k+1}}{\partial v_k}\\\
+\frac{\partial v_{k+1}}{\partial x_k} & \frac{\partial v_{k+1}}{\partial v_k}
+\end{bmatrix}
+=
+\begin{bmatrix}
+1 & dt\\\
+0 & 1
+\end{bmatrix}.
+$$
+
+Process noise models small unmodelled accelerations.
+
+```cpp process_model
+class Simple1DModel : public ProcessModelBase<float, 2> {
+public:
+    std::tuple<State, StateJacobian, StateCovariance>
+    predict(const State& state, float dt) {
+
+        float x = state[0];
+        float v = state[1];
+
+        State x_pred(x + v*dt, v);
+
+        StateJacobian F;
+        F << 1, dt,
+             0, 1;
+
+        StateCovariance Q;
+        Q << 0.1, 0,
+             0, 0.01;
+
+        return {x_pred, F, 0.1*Q*dt};
+    }
+};
 ```
 
 ## Defining a speed measurement model
@@ -85,57 +147,6 @@ public:
 };
 ```
 
-## Defining the process model
-
-We assume constant velocity motion.
-
-During a time interval (dt),
-
-[
-p_{k+1}=p_k+v_k,dt,
-]
-
-while the speed remains constant,
-
-[
-v_{k+1}=v_k.
-]
-
-The Jacobian of the state transition function is
-
-[
-F=
-\begin{bmatrix}
-1 & dt\
-0 & 1
-\end{bmatrix}.
-]
-
-Process noise models small unmodelled accelerations.
-
-```cpp process_model
-class Simple1DModel : public ProcessModelBase<float, 2> {
-public:
-    std::tuple<State, StateJacobian, StateCovariance>
-    predict(const State& state, float dt) {
-
-        float x = state[0];
-        float v = state[1];
-
-        State x_pred(x + v*dt, v);
-
-        StateJacobian F;
-        F << 1, dt,
-             0, 1;
-
-        StateCovariance Q;
-        Q << 0.1, 0,
-             0, 0.01;
-
-        return {x_pred, F, 0.1*Q*dt};
-    }
-};
-```
 
 ## Constructing the filter
 
