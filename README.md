@@ -72,7 +72,9 @@ Important EKF methods:
 - `getLastState()`
 - `reset()`
 
-## Documentation generation
+## Documentation
+
+Take a look at examples with tutorials: [Simple 1D](examples/simple_1d.md)
 
 Generate API docs with Doxygen:
 
