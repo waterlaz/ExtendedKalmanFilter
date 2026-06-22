@@ -92,59 +92,53 @@ public:
 
 ## Defining a speed measurement model
 
-The speed sensor observes only the speed component of the state,
 
-[
-z = v.
-]
+The speed sensor observes only the speed $v$ component of the state $\vec{s} = (x, v)^T$.
 
-The corresponding measurement matrix is
+The measurement matrix $H$ maps the state $(x, v)^T$ to the measurement (in this case, speed) $v$:
 
-[
-H =
+$$H =
 \begin{bmatrix}
 0 & 1
 \end{bmatrix}.
-]
+$$.
 
-The measurement model returns both the predicted measurement and the Jacobian.
+Indeed, $v = H\cdot (x, v)^T$.
+
+**NOTE:** The measurement model does not have to be linear. In case of a non-linear measurement model, $H$ is a Jacobian matrix that describes how the measurement changes with respect to the state.
+
+Any measurement model must implement a *static* `measure` method that takes the current state as input and returns a pair of predicted measurement and Jacobian. The predicted measurement is the expected value of the measurement given the current state, while the Jacobian describes how the measurement changes with respect to the state.
 
 ```cpp speed_measurement
-class SpeedMeasurement : public MeasurementModelBase<float, 2, 1> {
+// inherit from MeasurementModelBase and implement the static measure method
+class SpeedMeasurement : public MeasurementModelBase<float, 2, 1> { //use float as scalar type, 2 as state dimension, and 1 as measurement dimension
 public:
+    // note that measurement is a vector of dimension 1, not a scalar
     static std::pair<Vector<float, 1>, Matrix<float, 1, 2>>
     measure(const Vector<float, 2>& state) {
         Matrix<float, 1, 2> H;
-        H << 0, 1;
-        return {H*state, H};
+        H << 0, 1; // take only the speed component of the state as measurement
+        return {H*state, H}; // predicted measurement is H*state, Jacobian is H
     }
 };
 ```
 
 ## Defining a position measurement model
 
-Similarly, the position sensor observes only the position,
-
-[
-z = p,
-]
-
-with measurement matrix
-
-[
-H =
+Similarly, the position sensor observes only the position, with measurement matrix
+$$H =
 \begin{bmatrix}
 1 & 0
 \end{bmatrix}.
-]
+$$.
 
 ```cpp position_measurement
-class PositionMeasurement : public MeasurementModelBase<float, 2, 1> {
+class PositionMeasurement : public MeasurementModelBase<float, 2, 1> { //use float as scalar type, 2 as state dimension, and 1 as measurement dimension
 public:
     static std::pair<Vector<float, 1>, Matrix<float, 1, 2>>
     measure(const Vector<float, 2>& state) {
         Matrix<float, 1, 2> H;
-        H << 1, 0;
+        H << 1, 0; // take only the position component of the state as measurement
         return {H*state, H};
     }
 };
