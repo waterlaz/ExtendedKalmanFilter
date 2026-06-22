@@ -31,7 +31,8 @@ using namespace Eigen;
 
 ## Defining the process model
 
-The process model describes how the state evolves over time. This includes:
+Between measurements, the filter needs a way to predict how the system moves. This is the purpose of the process model, which describes how the state evolves over time.
+This includes:
 * the state transition function, which predicts the next state $(x_{k+1}, v_{k+1})$ based on the current state $(x_k, v_k)$ and time interval $dt$,
 * the Jacobian $F$ of the state transition function, which is used to propagate the uncertainty of the state,
 * the process noise covariance $Q$, which defines how uncertainty grows over time.
@@ -59,7 +60,8 @@ $$ F =
 \end{bmatrix}.$$
 
 
-Process noise is defined by its covariance $Q$ and models small unmodelled accelerations that do not fit in the constant velocity assumption.
+Process noise is defined by its covariance $Q$ and models small unmodelled accelerations that do not fit in the constant velocity assumption. Process noise reflects imperfections of the process model rather than sensor noise. A larger process noise covariance causes the filter to trust measurements more strongly and predictions less strongly.
+
 The covariance of the process noise is typically assumed to be proportional to the time interval $dt$: $Q\cdot dt$. For a simple model, we assume diagonal process noise covariance, where $Q_{11}$ models the uncertainty in position and $Q_{22}$ models the uncertainty in speed.
 
 To define the process model, derive a class from `ProcessModelBase` and implement the `predict` method, which returns the predicted state, the Jacobian, and the process noise covariance. The `EKF` class keeps an instance of the process model class and calls the `predict` method whenever a new measurement is added.
@@ -94,7 +96,7 @@ public:
 
 The speed sensor observes only the speed $v$ component of the state $\vec{s}$.
 
-The measurement matrix $H$ maps the state $(x, v)^T$ to the measurement (in this case, speed) $v$:
+The measurement function maps the state $(x, v)^T$ to the expected measurement (in this case, speed $v$). For this linear example, the function is represented by the matrix $H$:
 
 $$H = [ 0 \\; 1 ].$$
 
@@ -102,7 +104,10 @@ Indeed, $v = H\cdot (x, v)^T$.
 
 **NOTE:** The measurement model does not have to be linear. In case of a non-linear measurement model, $H$ is a Jacobian matrix that describes how the measurement changes with respect to the state.
 
-Any measurement model must implement a *static* `measure` method that takes the current state as input and returns a pair of predicted measurement and Jacobian. The predicted measurement is the expected value of the measurement given the current state, while the Jacobian describes how the measurement changes with respect to the state.
+Any measurement model must implement a *static* `measure` method that takes the current state as input and returns a pair of predicted measurement and Jacobian.
+The method is static because measurement models are stateless in this implementation.
+The filter does not store instances of them.
+The predicted measurement is the expected value of the measurement given the current state, while the Jacobian describes how the measurement changes with respect to the state.
 
 ```cpp speed_measurement
 // inherit from MeasurementModelBase and implement the static measure method
@@ -113,7 +118,8 @@ public:
     measure(const Vector<float, 2>& state) {
         Matrix<float, 1, 2> H;
         H << 0, 1; // take only the speed component of the state as measurement
-        return {H*state, H}; // predicted measurement is H*state, Jacobian is H
+        // In this linear example, the Jacobian equals H and the predicted measurement is H*state
+        return {H*state, H};
     }
 };
 ```
@@ -135,7 +141,9 @@ public:
     }
 };
 ```
-
+Different sensors are represented by different measurement models.
+The EKF automatically combines all measurements,
+even if they arrive at different times or have different dimensions.
 
 ## Constructing the filter
 
@@ -187,7 +195,9 @@ public:
 
 To demonstrate the filter, synthetic data is generated.
 
-Define the true position to be $x(t) = \sin(0.1t)$, which means the object oscillates back and forth with a period of $20\pi$ seconds. The true speed is the derivative of the position, which is $v(t) = 0.1\cos(0.1t)$.
+Define the true position to be $x(t) = \sin(0.1t)$.
+The true speed is the derivative of the position, which is $v(t) = 0.1\cos(0.1t)$.
+In a real application, measurements would come from sensors rather than from simulated sine waves.
 
 Gaussian noise is added to both measurements before being passed to the filter. The position measurements are noisier than the speed measurements, which is reflected in the measurement noise covariance $R$.
 
@@ -238,3 +248,8 @@ This example demonstrates the basic structure of an Extended Kalman Filter:
 4. Initialize the state and covariance.
 5. Add measurements as they arrive.
 6. Query the estimated state.
+
+This example demonstrates how multiple sensors can be fused using an Extended Kalman Filter.
+Each sensor is described by its own measurement model,
+while a common process model predicts the system between measurements.
+The filter automatically combines all available information to produce a best estimate of the state.
