@@ -5,26 +5,21 @@ In this example we estimate the position and speed of an object moving in one di
 * a position sensor,
 * a speed sensor.
 
-The state vector consists of the position and speed,
+The state vector $s$ consists of the position $x$ and speed $v$:
 
-[
-x=\begin{bmatrix}
-p\
-v
-\end{bmatrix},
-]
+$$\vec{s} = (x, v)^T.$$
 
-where (p) is the position and (v) is the speed.
+To use the Kalman filter one has to provide the following
 
 ## Including the library
 
-The filter implementation uses Eigen for vectors and matrices.
+The filter implementation uses Eigen for vectors and matrices. All you need to start using the Kalman filter is include the `EKF.hpp` header file. To run the simulation we also include `random` and `iostream`, which are not mandatory for the filter itself.
 
 ```cpp headers
 #include <random>
 #include <iostream>
 
-#include "../EKF.hpp"
+#include "EKF.hpp"
 
 using namespace ekf;
 using namespace Eigen;
