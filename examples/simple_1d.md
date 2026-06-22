@@ -92,6 +92,8 @@ public:
 
 ## Defining a speed measurement model
 
+test $\begin{bmatrix} 1 & 2 & 3 \end{bmatrix}$
+
 
 The speed sensor observes only the speed $v$ component of the state $\vec{s} = (x, v)^T$.
 
@@ -99,9 +101,8 @@ The measurement matrix $H$ maps the state $(x, v)^T$ to the measurement (in this
 
 $$H =
 \begin{bmatrix}
-0 & 1
-\end{bmatrix}.
-$$.
+0 & 1 \\\
+\end{bmatrix}.$$.
 
 Indeed, $v = H\cdot (x, v)^T$.
 
@@ -129,8 +130,7 @@ Similarly, the position sensor observes only the position, with measurement matr
 $$H =
 \begin{bmatrix}
 1 & 0
-\end{bmatrix}.
-$$.
+\end{bmatrix}.$$.
 
 ```cpp position_measurement
 class PositionMeasurement : public MeasurementModelBase<float, 2, 1> { //use float as scalar type, 2 as state dimension, and 1 as measurement dimension
