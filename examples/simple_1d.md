@@ -33,33 +33,31 @@ using namespace Eigen;
 
 The process model describes how the state evolves over time. This includes:
 * the state transition function, which predicts the next state $(x_{k+1}, v_{k+1})$ based on the current state $(x_k, v_k)$ and time interval $dt$,
-* the Jacobian of the state transition function, which is used to propagate the uncertainty of the state,
-* the process noise covariance, which defines how uncertainty grows over time.
+* the Jacobian $F$ of the state transition function, which is used to propagate the uncertainty of the state,
+* the process noise covariance $Q$, which defines how uncertainty grows over time.
 
 This example assumes constant velocity motion.
 
-During a time interval $dt$:
+During a time interval $dt$ the position changes proportional to the velocity:
 
 $$ x_{k+1} = x_k + v_k dt, $$
 
-while the speed remains constant,
+while the speed remains the same,
 
 $$v_{k+1}=v_k.$$
 
 The Jacobian $F$ of the state transition function is
 
-$$
-F=
+$$ F = 
 \begin{bmatrix}
 \frac{\partial x_{k+1}}{\partial x_k} & \frac{\partial x_{k+1}}{\partial v_k}\\\
 \frac{\partial v_{k+1}}{\partial x_k} & \frac{\partial v_{k+1}}{\partial v_k}
-\end{bmatrix}
-=
+\end{bmatrix} =
 \begin{bmatrix}
 1 & dt\\\
 0 & 1
-\end{bmatrix}.
-$$
+\end{bmatrix}.$$
+
 
 Process noise models small unmodelled accelerations.
 
