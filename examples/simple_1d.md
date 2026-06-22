@@ -139,53 +139,45 @@ public:
 
 ## Constructing the filter
 
-The filter combines the process model with both measurement models.
+To implement the filter, derive a class from `EKF` and specify the process model and measurement models as template parameters. The `EKF` class provides methods to add measurements and query the estimated state.
 
-Initially, we assume that the object is located at the origin and is stationary.
 
 ```cpp filter
 class EKF_1D :
     public EKF<
-        Simple1DModel,
-        SpeedMeasurement,
-        PositionMeasurement> {
-
+        Simple1DModel, // process model
+        SpeedMeasurement, // first measurement model
+        PositionMeasurement> { // second measurement model
 public:
     EKF_1D() {
-
+        // initialize the state and covariance
         this->initial_state << 0, 0;
-
-        this->initial_state_covariance
-            << 1, 0,
-               0, 1;
+        this->initial_state_covariance << 1, 0,
+                                          0, 1;
     }
-
+    // add a speed measurement to the filter at time t
     void addSpeed(float t, float speed) {
-
-        Matrix<float,1,1> z;
+        Matrix<float, 1, 1> z;
         z << speed;
-
-        Matrix<float,1,1> R;
+        Matrix<float, 1, 1> R; // measurement noise covariance
         R << 0.001;
-
+        // add the measurement to the filter, specifying the measurement type as template parameter
         this->addMeasurement<SpeedMeasurement>(t, z, R);
     }
 
     void addPosition(float t, float position) {
-
         Matrix<float,1,1> z;
         z << position;
-
         Matrix<float,1,1> R;
         R << 0.1;
-
         this->addMeasurement<PositionMeasurement>(t, z, R);
     }
 
     float getPosition() {
-
+        // query the estimated state from the filter and return the position component.
+        // getLastState queries the filter state at the last measurement time.
+        // In order to query the state at a specific time, use predictState(t).
         auto [state, covariance] = this->getLastState();
-
         return state[0];
     }
 };
@@ -193,21 +185,11 @@ public:
 
 ## Simulating measurements
 
-To demonstrate the filter, we generate synthetic data.
+To demonstrate the filter, synthetic data is generated.
 
-The true position is
+Define the true position to be $x(t) = \sin(0.1t)$, which means the object oscillates back and forth with a period of $20\pi$ seconds. The true speed is the derivative of the position, which is $v(t) = 0.1\cos(0.1t)$.
 
-[
-p(t)=\sin(0.1t),
-]
-
-and the true speed is
-
-[
-v(t)=0.1\cos(0.1t).
-]
-
-Gaussian noise is added to both measurements.
+Gaussian noise is added to both measurements before being passed to the filter. The position measurements are noisier than the speed measurements, which is reflected in the measurement noise covariance $R$.
 
 ```cpp main
 int main() {
@@ -250,11 +232,9 @@ int main() {
 
 This example demonstrates the basic structure of an Extended Kalman Filter:
 
-1. Define one or more measurement models.
-2. Define the process model.
+1. Define the process model.
+2. Define one or more measurement models.
 3. Derive a filter class from `EKF`.
 4. Initialize the state and covariance.
 5. Add measurements as they arrive.
 6. Query the estimated state.
-
-Despite its simplicity, this example already illustrates one of the strengths of the library: multiple measurement types can be fused transparently by a single filter.
