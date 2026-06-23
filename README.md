@@ -46,7 +46,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
    - one or more measurement models by inheriting `ekf::GenericMeasurementModel<Real, n, m>`
 3. Instantiate `ekf::EKF<ProcessModel, MeasurementModel1, ...>`.
 4. Set `initial_state` and `initial_state_covariance`.
-5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `getState(time)`.
+5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `predictState(time)`.
 
 Take a peek at the tutorial: [Simple 1D](examples/simple_1d.md)
 
@@ -70,7 +70,7 @@ Important EKF methods:
 
 - `addMeasurement<Model>(time, measurement, measurement_covariance)`
 - `addNoMeasurement(time)`
-- `getState(time)`
+- `predictState(time)`
 - `getLastState()`
 - `reset()`
 
