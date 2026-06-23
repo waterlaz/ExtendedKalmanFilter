@@ -223,7 +223,7 @@ public:
 template <typename Real, int n>
 class NoMeasurementModel : public MeasurementModelBase<Real, n, 0> {
 public:
-    [[nodiscard]] static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
+    static std::pair<Eigen::Matrix<Real, 0, 1>, Eigen::Matrix<Real, 0, n>>
         measure(const Eigen::Matrix<Real, n, 1>&)
     {
         return {Eigen::Matrix<Real, 0, 1>(), Eigen::Matrix<Real, 0, n>()};
@@ -279,7 +279,7 @@ public:
     using State = Eigen::Matrix<Real, n, 1>;
     using StateCovariance = Eigen::Matrix<Real, n, n>;
     using StateTransition = Eigen::Matrix<Real, n, n>;
-    /// @brief Indicates whether the filter state has a valid estimated state and covariance.
+    /// @brief Indicates whether the filter state has a valid estimated state.
     bool hasEstimatedState = false;
     /// @brief The state vector at the time of the observation (x).
     State state;
