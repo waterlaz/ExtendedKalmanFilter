@@ -104,13 +104,12 @@ Indeed, $v = H\cdot (x, v)^T$.
 
 **NOTE:** The measurement model does not have to be linear. In case of a non-linear measurement model, $H$ is a Jacobian matrix that describes how the measurement changes with respect to the state.
 
-Any measurement model must implement a *static* `measure` method that takes the current state as input and returns a pair of predicted measurement and Jacobian.
-The method is static because measurement models are stateless in this implementation.
-The filter does not store instances of them.
-The predicted measurement is the expected value of the measurement given the current state, while the Jacobian describes how the measurement changes with respect to the state.
+Any measurement model must implement a `measure` method that takes the current state as input and returns a pair of predicted measurement and Jacobian.
+The predicted measurement is the expected value of the measurement given the current state,
+while the Jacobian describes how the measurement changes with respect to the state.
 
 ```cpp speed_measurement
-// inherit from MeasurementModelBase and implement the static measure method
+// inherit from MeasurementModelBase and implement the measure method
 class SpeedMeasurement : public MeasurementModelBase<float, 2, 1> { //use float as scalar type, 2 as state dimension, and 1 as measurement dimension
 public:
     // note that measurement is a vector of dimension 1, not a scalar

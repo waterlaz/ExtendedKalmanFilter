@@ -22,18 +22,19 @@ namespace ekf {
  * - A nested type `Measurement` representing the measurement vector.
  * - A nested type `MeasurementCovariance` representing the covariance matrix of the measurement noise.
  * - A nested type `MeasurementJacobian` representing the Jacobian matrix of the measurement function.
- * - A static member function `measure(const State&)` that returns a pair of the expected measurement and its Jacobian.
+ * - A member function `measure(const State&)` that returns a pair of the expected measurement and its Jacobian.
  * - A static member function `measurementAngleIndices()` that returns a range of indices corresponding to angle measurements.
  *   Angles will be normalized to the range [-pi, pi] during the update step.
  */
 template<typename M>
 concept MeasurementModelConcept = requires(
+    const M m,
     typename M::State x,
     typename M::Measurement z,
     typename M::MeasurementCovariance R,
     typename M::MeasurementJacobian H
 ) {
-    { M::measure(x) } -> std::same_as<std::pair<typename M::Measurement, typename M::MeasurementJacobian>>;
+    { m.measure(x) } -> std::same_as<std::pair<typename M::Measurement, typename M::MeasurementJacobian>>;
     { M::measurementAngleIndices() } -> std::ranges::range;
 };
 
@@ -166,7 +167,7 @@ template <typename Real, int n>
  *
  * A measurement model defines how the system state is mapped to an expected
  * measurement and its Jacobian. Derived classes are expected to provide a
- * static `measure()` function and may optionally override
+ * `measure()` function and may optionally override
  * `measurementAngleIndices()` and `gatingProbability`.
  *
  * @tparam R Floating-point type (for example `float` or `double`).
@@ -191,7 +192,7 @@ public:
      *
      *  This is useful for non-linear measurements.
      */
-    static std::pair<Measurement, MeasurementJacobian> measure(const State& state) = delete;
+    std::pair<Measurement, MeasurementJacobian> measure(const State& state) = delete;
     /**  @brief Indices of the angles in the measurement vector.
      *
      *  Any measurement variable that represents an angle (e.g. orientation)
@@ -353,10 +354,12 @@ public:
     using MeasurementCovariance = typename MeasurementModel::MeasurementCovariance;
     using KalmanGain = Eigen::Matrix<Real, State::RowsAtCompileTime,
                                     Measurement::RowsAtCompileTime>;
+    /// @brief The measurement model used to interpret the measurement.
+    [[no_unique_address]] MeasurementModel measurement_model;
     /// @brief The measurement vector associated with the observation (z).
-    Measurement measurement;
+    [[no_unique_address]] Measurement measurement;
     ///  @brief The covariance matrix of the measurement noise (R).
-    MeasurementCovariance measurement_covariance;
+    [[no_unique_address]] MeasurementCovariance measurement_covariance;
     /**
      * @brief Constructs an empty measurement step.
      *
@@ -371,11 +374,14 @@ public:
      * measurement function and measurement noise covariance.
      * @param measurement The actual measurement.
      * @param measurement_covariance The covariance matrix of the measurement noise.
+     * @param measurement_model The measurement model to interpret the measurement.
      */
     MeasurementStep(const Measurement& measurement,
-                    const MeasurementCovariance& measurement_covariance)
-        : measurement{measurement},
-          measurement_covariance{measurement_covariance}
+                    const MeasurementCovariance& measurement_covariance,
+                    const MeasurementModel& measurement_model) :
+        measurement_model{measurement_model},
+        measurement{measurement},
+        measurement_covariance{measurement_covariance}
     {
         assert(isMatrixPositiveDefinite(measurement_covariance));
         assert(measurement.size() == measurement_covariance.rows());
@@ -395,11 +401,11 @@ public:
 
         if constexpr (Measurement::RowsAtCompileTime != 0) {
         if(hasMeasurement()) {
-            auto [z_pred, H] = MeasurementModel::measure(x_pred);
+            auto [z_pred, H] = measurement_model.measure(x_pred);
             assert(z_pred.size() == measurement.size());
             assert(H.rows() == measurement.size());
             Measurement y = measurement - z_pred;
-            for(int i : MeasurementModel::measurementAngleIndices()) {
+            for(int i : measurement_model.measurementAngleIndices()) {
                 y[i] = normalizeAngle(y[i]);
             }
 
@@ -701,7 +707,7 @@ public:
     /// @brief the initial state covariance matrix for the EKF.
     StateCovariance initial_state_covariance;
     /// @brief the process model used for state prediction.
-    ProcessModel process_model;
+    [[no_unique_address]] ProcessModel process_model;
     /// @brief resets the EKF to the initial state.
     void reset() {
         timeline.clear();
@@ -766,10 +772,11 @@ public:
     const TimeStep& addMeasurement(
         Time time,
         const typename MeasurementModel::Measurement& measurement,
-        const typename MeasurementModel::MeasurementCovariance& measurement_covariance)
+        const typename MeasurementModel::MeasurementCovariance& measurement_covariance,
+        const MeasurementModel& measurement_model = MeasurementModel() )
     {
         return addMeasurementStep(time,
-            MeasurementStep<MeasurementModel>(measurement, measurement_covariance));
+            MeasurementStep(measurement, measurement_covariance, measurement_model));
     }
 
     /** @brief Gets the state and covariance at a given time.
