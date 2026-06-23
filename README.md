@@ -48,6 +48,8 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 4. Set `initial_state` and `initial_state_covariance`.
 5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `getState(time)`.
 
+Take a peek at the tutorial: [Simple 1D](examples/simple_1d.md)
+
 ## Build and run tests
 
 ```bash
