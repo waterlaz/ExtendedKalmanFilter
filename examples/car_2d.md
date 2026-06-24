@@ -19,6 +19,9 @@ where:
 - $w$ is angular speed,
 - $a$ is linear acceleration.
 
+The model assumes constant acceleration between updates.
+Including acceleration in the state allows the filter to represent smooth changes in velocity while still using a relatively simple process model.
+
 Three sensor types are fused:
 
 1. linear and angular speed sensor $(v, w)$,
@@ -53,6 +56,8 @@ Given the current car state with pose $(x, y, \gamma)$, linear velocity $v$, ang
 The car travels the distance $l = vdt + \frac{1}{2}adt^2$ in the average direction of the yaw angle $\gamma + 0.5 w dt$, while the yaw angle changes from $\gamma$ to $\gamma + w dt$.
 This advances $(x, y)$ to a new position
 $\big(x + l \cos(\gamma + \frac{1}{2} w dt), \\; y + l \sin(\gamma + \frac{1}{2} w dt)\big)$.
+Instead of evaluating the heading only at the beginning of the interval, the model uses the average heading during the interval.
+This improves accuracy during turns while keeping the model simple.
 
 Notice that during the update $\gamma$ (yaw angle) is wrapped with `normalizeAngle(...)`
 so it stays in the $[-\pi, \pi]$ range.
@@ -129,6 +134,8 @@ public:
 ```
 Notice redefining the `gatingProbability` constant in the measurement model to
 change the outlier rejection threshold for this sensor type.
+Before accepting a measurement, the filter computes how surprising it is compared to the predicted measurement and its uncertainty.
+Measurements that are statistically implausible are rejected as outliers.
 This is configured per measurement model, so different sensors can have different gating behavior.
 - `0.95` means keep measurements that are statistically consistent at 95% confidence.
 - Larger values are more permissive; smaller values reject more aggressive outliers.
@@ -138,7 +145,7 @@ This is configured per measurement model, so different sensors can have differen
 `PositionMeasurementModel` is linear and also defines angle-aware innovation handling.
 To properly handle angle measurements,
 the EKF library needs to know which components of the measurement vector are angles and should be wrapped to $[-\pi, \pi]$ after computing the innovation (residual).
-Indeed, the difference between two angles $\pi - \varepsilon$ and $-\pi + \varepsilon$ is $2\varepsilon$ for small values of $\varepsilon$ and not $2\pi - 2\varepsilon$,
+Indeed, the difference between two angles $\pi - \varepsilon$ and $-\pi + \varepsilon$ is $-2\varepsilon$ for small values of $\varepsilon$ and not $2\pi - 2\varepsilon$,
 
 Out of the three components of the measurement vector $(x, y, \gamma)$,
 only the third component $\gamma$ (yaw) is an angle,
@@ -178,7 +185,7 @@ For a car at position $(x, y)$, the distance (output of the measurement model) i
 $d = \sqrt{(x - x_m)^2 + (y - y_m)^2}$.
 
 The model is not linear, which is not a problem, since the EKF library can handle nonlinear measurement models as long as they provide a Jacobian $H$ for the current state.
-$$H = \left[\frac{\partial d}{\partial x}, \\; 
+$$H = \left[\frac{\partial d}{\partial x}, \\;
        \frac{\partial d}{\partial y}, \\;
        \frac{\partial d}{\partial \gamma}, \\;
        \frac{\partial d}{\partial v}, \\;
@@ -204,6 +211,9 @@ public:
         double ym = marker_position[1];
         Matrix<double, 1, 6> H;
         if(distance < 1e-6) {
+            // avoid division by zero when the car is too close to the marker
+            // the Jacobian is undefined in this case, so we set it to zero
+            // this will make the filter ignore the measurement.
             H.setZero();
         } else {
             H << (x - xm) / distance, (y - ym) / distance, 0, 0, 0, 0;
@@ -214,7 +224,8 @@ public:
         : marker_position(marker_position) {}
 };
 ```
-Unlike the previous models, `measure` is **non-static** because it depends on per-instance data.
+In the previous tutorial all measurement models were stateless and could use a static `measure(...)` method.
+Here each marker has its own position, so the model stores that position as member data and `measure(...)` becomes a normal member function.
 
 ## Constructing the filter
 
@@ -269,6 +280,8 @@ public:
 ```
 
 ## Predicting state into the future
+
+Unlike many simple EKF implementations, this library can estimate the state at arbitrary times rather than only at measurement timestamps.
 
 The `predictPosition(...)` method of the `EKF_Car2D` class queries the filter
 for the estimated state at a specific time `t` and returns the position component.
@@ -389,11 +402,6 @@ int main() {
 
 ## Summary
 
-Compared to the 1D example, this 2D car tutorial adds:
+This example demonstrates how the library handles realistic EKF problems:
+nonlinear motion, nonlinear measurements, angular quantities, configurable outlier rejection, runtime model parameters, and state prediction at arbitrary times.
 
-1. A higher-dimensional nonlinear process model.
-2. Per-model outlier gating via `gatingProbability`.
-3. Angle-aware residual wrapping for yaw.
-4. A stateful, nonlinear, non-static measurement model (`MarkerDistanceMeasurementModel`).
-5. Runtime process-noise tuning through `ekf.process_model.Q` (easy to wire to config files).
-6. Future-time state prediction using `predictState`.
