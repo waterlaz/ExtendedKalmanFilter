@@ -27,7 +27,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 
 ## Requirements
 
-- C++11 compiler (or C++20 compiler for concepts support)
+- C++17 compiler (or C++20 compiler for concepts support)
 - [Eigen](https://eigen.tuxfamily.org/) (`Eigen/Dense`)
 
 ## Project layout
@@ -35,7 +35,7 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 - `EKF.hpp` – library implementation and API documentation (Doxygen style comments)
 - `examples/simple_1d.md` – minimal runnable usage example
 - `examples/car_2d.md` – a more advanced example that shows extra features
-- `tests/testTimeLine.cpp` – timeline ordering test executable
+- `tests/testTimeline.cpp` – timeline ordering test executable
 - `tests/testBatchMeasurement.cpp` – tests not flooding the timeline when querying states at the same time. Also tests for simple prediction being sane.
 - `Doxyfile` – Doxygen configuration
 
@@ -43,8 +43,8 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 
 1. Add `EKF.hpp` to your include path.
 2. Define:
-   - a process model by inheriting `ekf::GenericProcessModel<Real, n>`
-   - one or more measurement models by inheriting `ekf::GenericMeasurementModel<Real, n, m>`
+   - a process model by inheriting `ekf::ProcessModelBase<Real, n>`
+   - one or more measurement models by inheriting `ekf::MeasurementModelBase<Real, n, m>`
 3. Instantiate `ekf::EKF<ProcessModel, MeasurementModel1, ...>`.
 4. Set `initial_state` and `initial_state_covariance`.
 5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `predictState(time)`.
