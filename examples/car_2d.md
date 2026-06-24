@@ -107,23 +107,6 @@ public:
 };
 ```
 
-### Configurable process covariance `Q`
-
-`Q` is a model member (`ekf.process_model.Q`), so you can fill it from configuration values before running the filter.
-The example fills it manually, but the same assignment can be made from parsed config parameters:
-
-```cpp q_setup
-ekf.process_model.Q <<
-    q_x, 0, 0, 0, 0, 0,
-    0, q_y, 0, 0, 0, 0,
-    0, 0, q_yaw, 0, 0, 0,
-    0, 0, 0, q_v, 0, 0,
-    0, 0, 0, 0, q_w, 0,
-    0, 0, 0, 0, 0, q_a;
-```
-
-This makes tuning process uncertainty easy without changing model code.
-
 ## Measurement model 1: speed (`v`, `w`)
 
 `SpeedMeasurementModel` is linear and static:
@@ -133,36 +116,50 @@ class SpeedMeasurementModel : public MeasurementModelBase<double, 6, 2> {
 public:
     static std::pair<Vector<double, 2>, Matrix<double, 2, 6>>
     measure(const Vector<double, 6>& state) {
-        ...
+        Matrix<double, 2, 6> H;
+        H << 0, 0, 0, 1, 0, 0, // v
+             0, 0, 0, 0, 1, 0; // w
+        // In this linear example, the Jacobian equals H and the predicted measurement is H*state
         return {H*state, H};
     }
-
+    // Accept measurements with 95% probability,
+    // i.e. reject measurements that are too far away from the predicted measurement.
     static constexpr Real gatingProbability = 0.95;
 };
 ```
-
-### Custom gating probability
-
-Setting `gatingProbability` changes outlier rejection threshold for this sensor type.
-
+Notice redefining the `gatingProbability` constant in the measurement model to
+change the outlier rejection threshold for this sensor type.
+This is configured per measurement model, so different sensors can have different gating behavior.
 - `0.95` means keep measurements that are statistically consistent at 95% confidence.
 - Larger values are more permissive; smaller values reject more aggressive outliers.
 
-This is configured per measurement model, so different sensors can have different gating behavior.
-
 ## Measurement model 2: pose (`x`, `y`, `yaw`)
 
-`PositionMeasurementModel` is linear and also defines angle-aware innovation handling:
+`PositionMeasurementModel` is linear and also defines angle-aware innovation handling.
+To properly handle angle measurements,
+the EKF library needs to know which components of the measurement vector are angles and should be wrapped to $[-\pi, \pi]$ after computing the innovation (residual).
+Indeed, the difference between two angles $\pi - \varepsilon$ and $-\pi + \varepsilon$ is $2\varepsilon$ for small values of $\varepsilon$ and not $2\pi - 2\varepsilon$,
+
+Out of the three components of the measurement vector $(x, y, \gamma)$,
+only the third component $\gamma$ (yaw) is an angle,
+so we return its index `2` (in Eigen indexing starts at 0) in `measurementAngleIndices()`.
 
 ```cpp position_measurement
 class PositionMeasurementModel : public MeasurementModelBase<double, 6, 3> {
 public:
     static std::pair<Vector<double, 3>, Matrix<double, 3, 6>>
     measure(const Vector<double, 6>& state) {
-        ...
+        Matrix<double, 3, 6> H;
+        H << 1, 0, 0, 0, 0, 0, // x
+             0, 1, 0, 0, 0, 0, // y
+             0, 0, 1, 0, 0, 0; // yaw
+        // In this linear example, the Jacobian equals H and the predicted measurement is H*state
         return {H*state, H};
     }
-
+    // return the indices of the measurement vector that correspond to the angle.
+    // 0 -- x
+    // 1 -- y
+    // 2 -- yaw is an angle and should be wrapped to [-pi, pi].
     static constexpr std::array<size_t, 1> measurementAngleIndices() {
         return {2};
     }
