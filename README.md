@@ -1,6 +1,6 @@
 # ExtendedKalmanFilter
 
-A header-only C++20 (also supports older version) Extended Kalman Filter (EKF) library based on Eigen.
+A header-only single-include C++20 (also supports older version) Extended Kalman Filter (EKF) library based on Eigen.
 
 This library is designed for real-time sensor fusion with:
 - Multiple measurement model types
@@ -33,7 +33,8 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 ## Project layout
 
 - `EKF.hpp` – library implementation and API documentation (Doxygen style comments)
-- `examples/simple_1d.cpp` – minimal runnable usage example
+- `examples/simple_1d.md` – minimal runnable usage example
+- `examples/car_2d.md` – a more advanced example that shows extra features
 - `tests/testTimeLine.cpp` – timeline ordering test executable
 - `tests/testBatchMeasurement.cpp` – tests not flooding the timeline when querying states at the same time. Also tests for simple prediction being sane.
 - `Doxyfile` – Doxygen configuration
@@ -48,7 +49,9 @@ The public API is in [`EKF.hpp`](./EKF.hpp).
 4. Set `initial_state` and `initial_state_covariance`.
 5. Feed measurements with `addMeasurement<Model>(time, z, R)` and/or request predicted states with `predictState(time)`.
 
-Take a peek at the tutorial: [Simple 1D](examples/simple_1d.md)
+Take a peek at the tutorials: 
+* [Simple 1D](examples/simple_1d.md)
+* [Car 2D](examples/car_2d.md)
 
 ## Build and run tests
 
@@ -76,7 +79,9 @@ Important EKF methods:
 
 ## Documentation
 
-Take a look at examples with tutorials: [Simple 1D](examples/simple_1d.md)
+Take a look at examples with tutorials: 
+* [Simple 1D](examples/simple_1d.md)
+* [Car 2D](examples/car_2d.md)
 
 Generate API docs with Doxygen:
 
