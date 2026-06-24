@@ -178,13 +178,13 @@ For a car at position $(x, y)$, the distance (output of the measurement model) i
 $d = \sqrt{(x - x_m)^2 + (y - y_m)^2}$.
 
 The model is not linear, which is not a problem, since the EKF library can handle nonlinear measurement models as long as they provide a Jacobian $H$ for the current state.
-$$H = [\frac{\partial d}{\partial x},
-       \frac{\partial d}{\partial y},
-       \frac{\partial d}{\partial \gamma},
-       \frac{\partial d}{\partial v},
-       \frac{\partial d}{\partial w},
-       \frac{\partial d}{\partial a}]
- = [\frac{1}{d} (x-x_m),  \frac{1}{d} (y-y_m), 0, 0, 0, 0].$$
+$$H = \left[\frac{\partial d}{\partial x}, \\; 
+       \frac{\partial d}{\partial y}, \\;
+       \frac{\partial d}{\partial \gamma}, \\;
+       \frac{\partial d}{\partial v}, \\;
+       \frac{\partial d}{\partial w}, \\;
+       \frac{\partial d}{\partial a}\right]
+ = \left[\frac{1}{d} (x-x_m), \\; \frac{1}{d} (y-y_m), \\; 0, \\; 0, \\; 0, \\; 0\right].$$
 
 The other peculiarity is that the measurement model is *stateful*.
 It is convenient to store the marker position in the model instance, so that the same model can be used for different markers at different positions.
@@ -280,7 +280,7 @@ Very often sensors operate at different rates with varying lag, so the ability t
 
 Simulation assumes a car moving in a 2D plane in a figure-eight pattern defined as:
 
-$$(x, y) = (10.0 sin(0.1 t), 5.0 sin(0.2 t)).$$
+$$(x, y) = (10.0 \sin(0.1 t), \\; 5.0 \sin(0.2 t)).$$
 
 The speed sensor is available every tick, the position sensor is available every 10 ticks, and the marker distance sensor is available every 4 ticks.
 All sensors are noisy, and the filter is configured with the correct noise levels.
