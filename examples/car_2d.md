@@ -54,8 +54,8 @@ The car travels the distance $l = vdt + \frac{1}{2}adt^2$ in the average directi
 This advances $(x, y)$ to a new position
 $\big(x + l \cos(\gamma + \frac{1}{2} w dt), \\; y + l \sin(\gamma + \frac{1}{2} w dt)\big)$.
 
-Notice that during the update yaw is wrapped with `normalizeAngle(...)`
-so it stays in the `[-pi, pi]` range.
+Notice that during the update $\gamma$ (yaw angle) is wrapped with `normalizeAngle(...)`
+so it stays in the $[-\pi, \pi]$ range.
 
 ```cpp process_model
 // The Car 2D model is a simple kinematic model with 2d position, yaw angle,
@@ -165,8 +165,6 @@ public:
     }
 };
 ```
-
-`measurementAngleIndices()` tells EKF that the third residual component is an angle and must be normalized.
 
 ## Measurement model 3: nonlinear, stateful marker distance
 
