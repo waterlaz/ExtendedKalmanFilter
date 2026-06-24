@@ -41,20 +41,20 @@ using namespace Eigen;
 
 ## Defining the 2D process model
 
-`Car2DModel` derives from `ProcessModelBase<double, 6>` and implements:
+`Car2DModel` derives from `ProcessModelBase<double, 6>` and implements
+a  nonlinear motion prediction and Jacobian $F$ for covariance propagation.
 
-- nonlinear motion prediction,
-- Jacobian $F$ for covariance propagation,
-- process noise covariance `Q`.
+One of the key notable differences here is that the process model `Car2DModel` is
+stateful and implements a *nonstatic* `predict(...)` method.
+The `Car2DModel` class stores the process noise covariance `Q` as a member variable,
+which can be set at runtime from configuration parameters.
 
 Given the current car state with pose $(x, y, yaw)$, linear velocity $v$, angular velocity $w$ and linear acceleration $a$, the model predicts the next state after a time step $dt$ according to the following assumptions.
 The car travels the distance $l = vdt + \frac{1}{2}adt^2$ in the average direction of the yaw angle $yaw + 0.5 w dt$, while the yaw angle changes from $yaw$ to $yaw + w dt$.
+This advances $(x, y)$ to a new position
+$(x + \cos(yaw + \frac{1}{2} w dt), \sin(yaw + \frac{1}{2} w dt))$.
 
-$$l = vdt + \frac{1}{2}adt^2,$$
-
-and advances $(x, y)$ using `cos(yaw + 0.5*w*dt)` and `sin(yaw + 0.5*w*dt)`.
-
-Notive that during the update yaw is wrapped with `normalizeAngle(...)`
+Notice that during the update yaw is wrapped with `normalizeAngle(...)`
 so it stays in the `[-pi, pi]` range.
 
 ```cpp process_model
