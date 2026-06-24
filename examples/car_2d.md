@@ -9,20 +9,20 @@ Refer to the [Simple 1D](simple_1d.md) tutorial for a basic introduction to the 
 
 The filter estimates a 2D car state:
 
-$$\vec{s} = (x,\ y,\ yaw,\ v,\ w,\ a)^T,$$
+$$\vec{s} = (x,\ y,\ \gamma,\ v,\ w,\ a)^T,$$
 
 where:
 
 - $x, y$ are position,
-- $yaw$ is heading angle,
+- $\gamma$ is heading angle,
 - $v$ is linear speed,
 - $w$ is angular speed,
 - $a$ is linear acceleration.
 
 Three sensor types are fused:
 
-1. linear and angular speed sensor ($v, w$),
-2. pose sensor ($x, y, yaw$),
+1. linear and angular speed sensor $(v, w)$,
+2. pose sensor $(x, y, \gamma)$,
 3. marker-distance sensor (distance to a known 2D marker position).
 
 ## Including the library
@@ -49,10 +49,10 @@ stateful and implements a *nonstatic* `predict(...)` method.
 The `Car2DModel` class stores the process noise covariance `Q` as a member variable,
 which can be set at runtime from configuration parameters.
 
-Given the current car state with pose $(x, y, yaw)$, linear velocity $v$, angular velocity $w$ and linear acceleration $a$, the model predicts the next state after a time step $dt$ according to the following assumptions.
-The car travels the distance $l = vdt + \frac{1}{2}adt^2$ in the average direction of the yaw angle $yaw + 0.5 w dt$, while the yaw angle changes from $yaw$ to $yaw + w dt$.
+Given the current car state with pose $(x, y, \gamma)$, linear velocity $v$, angular velocity $w$ and linear acceleration $a$, the model predicts the next state after a time step $dt$ according to the following assumptions.
+The car travels the distance $l = vdt + \frac{1}{2}adt^2$ in the average direction of the yaw angle $\gamma + 0.5 w dt$, while the yaw angle changes from $\gamma$ to $\gamma + w dt$.
 This advances $(x, y)$ to a new position
-$(x + \cos(yaw + \frac{1}{2} w dt), \sin(yaw + \frac{1}{2} w dt))$.
+$\big(x + l \cos(\gamma + \frac{1}{2} w dt), \\; y + l \sin(\gamma + \frac{1}{2} w dt)\big)$.
 
 Notice that during the update yaw is wrapped with `normalizeAngle(...)`
 so it stays in the `[-pi, pi]` range.
